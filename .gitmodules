@@ -1,0 +1,15 @@
+[submodule "stonefish"]
+	path = stonefish
+	url = https://github.com/gomsoonhyung/stonefish.git
+[submodule "src/stonefish_ros2"]
+	path = src/stonefish_ros2
+	url = https://github.com/gomsoonhyung/stonefish_ros2.git
+[submodule "src/mvp_control"]
+	path = src/mvp_control
+	url = https://github.com/uri-ocean-robotics/mvp_control.git
+[submodule "src/mvp_mission"]
+	path = src/mvp_mission
+	url = https://github.com/uri-ocean-robotics/mvp_mission.git
+[submodule "src/mvp_msgs"]
+	path = src/mvp_msgs
+	url = https://github.com/uri-ocean-robotics/mvp_msgs.git
