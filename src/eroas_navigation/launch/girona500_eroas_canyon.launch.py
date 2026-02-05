@@ -7,68 +7,30 @@ import os
 
 
 def generate_launch_description():
-    # Get package directories
     pkg_stonefish_ros2 = get_package_share_directory('stonefish_ros2')
     pkg_eroas_navigation = get_package_share_directory('eroas_navigation')
 
-    # Simulation parameters
     simulation_data = os.path.join(pkg_stonefish_ros2, 'data')
-    scenario_desc = os.path.join(pkg_stonefish_ros2, 'scenarios', 'console_test.scn')
+    scenario_desc = os.path.join(pkg_stonefish_ros2, 'scenarios', 'eroas_canyon_test.scn')
 
     # Launch arguments
-    simulation_data_arg = DeclareLaunchArgument(
-        'simulation_data',
-        default_value=simulation_data
-    )
+    simulation_data_arg = DeclareLaunchArgument('simulation_data', default_value=simulation_data)
+    scenario_desc_arg = DeclareLaunchArgument('scenario_desc', default_value=scenario_desc)
+    simulation_rate_arg = DeclareLaunchArgument('simulation_rate', default_value='100.0')
+    window_res_x_arg = DeclareLaunchArgument('window_res_x', default_value='1280')
+    window_res_y_arg = DeclareLaunchArgument('window_res_y', default_value='1000')
+    rendering_quality_arg = DeclareLaunchArgument('rendering_quality', default_value='high')
 
-    scenario_desc_arg = DeclareLaunchArgument(
-        'scenario_desc',
-        default_value=scenario_desc
-    )
+    # Goal position arguments (end of canyon)
+    goal_x_arg = DeclareLaunchArgument('goal_x', default_value='25.0')
+    goal_y_arg = DeclareLaunchArgument('goal_y', default_value='0.0')
+    goal_z_arg = DeclareLaunchArgument('goal_z', default_value='3.0')
 
-    simulation_rate_arg = DeclareLaunchArgument(
-        'simulation_rate',
-        default_value='100.0'
-    )
-
-    window_res_x_arg = DeclareLaunchArgument(
-        'window_res_x',
-        default_value='1280'
-    )
-
-    window_res_y_arg = DeclareLaunchArgument(
-        'window_res_y',
-        default_value='1000'
-    )
-
-    rendering_quality_arg = DeclareLaunchArgument(
-        'rendering_quality',
-        default_value='high'
-    )
-
-    # Goal position arguments
-    goal_x_arg = DeclareLaunchArgument(
-        'goal_x',
-        default_value='10.0',
-        description='Goal X coordinate'
-    )
-
-    goal_y_arg = DeclareLaunchArgument(
-        'goal_y',
-        default_value='10.0',
-        description='Goal Y coordinate'
-    )
-
-    goal_z_arg = DeclareLaunchArgument(
-        'goal_z',
-        default_value='3.0',
-        description='Goal Z coordinate (depth, positive down in NED)'
-    )
-
+    # Manual start mode for screen recording
     auto_start_arg = DeclareLaunchArgument(
         'auto_start',
-        default_value='true',
-        description='Start navigation immediately (false = wait for service call)'
+        default_value='false',
+        description='Start navigation immediately (false = manual start via service)'
     )
 
     # Stonefish simulator node
@@ -88,39 +50,57 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Simple velocity to thruster converter (replaces MVP Control)
-    cmd_vel_to_thrusters_node = Node(
+    # FLS to PointCloud converter
+    fls_to_pointcloud_node = Node(
         package='eroas_navigation',
-        executable='cmd_vel_to_thrusters',
-        name='cmd_vel_to_thrusters',
+        executable='fls_to_pointcloud',
+        name='fls_to_pointcloud',
         parameters=[
             {'namespace': 'GIRONA500'},
-            {'surge_scale': 10.0},   # Increased for stronger thrust
-            {'sway_scale': 10.0},    # Increased for stronger thrust
-            {'heave_scale': 5.0},    # Increased for depth control
-            {'yaw_scale': 2.0}       # Increased for faster turning
+            {'num_beams': 512},
+            {'num_bins': 128},
+            {'horizontal_fov': 90.0},
+            {'vertical_fov': 20.0},
+            {'range_min': 1.0},
+            {'range_max': 20.0},
+            {'intensity_threshold': 15.0}
         ],
         output='screen',
     )
 
-    # EROAS Navigation Node
+    # EROAS navigation node
     eroas_node = Node(
         package='eroas_navigation',
         executable='eroas_node',
         name='eroas_node',
         parameters=[
             {'namespace': 'GIRONA500'},
-            {'control_frequency': 10.0},
+            {'control_frequency': 15.0},  # Match FLS rate
             {'goal_x': LaunchConfiguration('goal_x')},
             {'goal_y': LaunchConfiguration('goal_y')},
             {'goal_z': LaunchConfiguration('goal_z')},
-            {'goal_tolerance': 1.0},
+            {'goal_tolerance': 2.0},
             {'auto_start': LaunchConfiguration('auto_start')}
         ],
         output='screen',
     )
 
-    # Odometry to TF bridge (converts /GIRONA500/dynamics to TF)
+    # Velocity to thruster converter
+    cmd_vel_to_thrusters_node = Node(
+        package='eroas_navigation',
+        executable='cmd_vel_to_thrusters',
+        name='cmd_vel_to_thrusters',
+        parameters=[
+            {'namespace': 'GIRONA500'},
+            {'surge_scale': 1.0},
+            {'sway_scale': 1.0},
+            {'heave_scale': 3.0},
+            {'yaw_scale': 0.5}
+        ],
+        output='screen',
+    )
+
+    # Odometry to TF bridge
     odom_to_tf_node = Node(
         package='stonefish_ros2',
         executable='odom_to_tf.py',
@@ -128,7 +108,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Robot state publisher (publishes TF from URDF)
+    # Robot state publisher
     urdf_file = os.path.join(pkg_stonefish_ros2, 'urdf', 'girona500.urdf')
     with open(urdf_file, 'r') as f:
         robot_desc = f.read()
@@ -160,16 +140,25 @@ def generate_launch_description():
         arguments=['0', '0', '0', '0', '0', '0', 'GIRONA500/Vehicle', 'GIRONA500/base_link']
     )
 
-    # Teleoperation node - DISABLED to avoid conflicts
-    # teleop_node = Node(
-    #     package='stonefish_ros2',
-    #     executable='girona500_teleop.py',
-    #     name='girona500_teleop',
-    #     output='screen',
-    #     prefix='xterm -e',
-    # )
+    # FLS Viewer
+    fls_viewer_node = Node(
+        package='eroas_navigation',
+        executable='fls_viewer',
+        name='fls_viewer',
+        parameters=[
+            {'namespace': 'GIRONA500'},
+            {'window_name': 'FLS - EROAS Canyon Test'},
+            {'horizontal_fov': 90.0},
+            {'range_min': 1.0},
+            {'range_max': 20.0},
+            {'display_size': 400},
+            {'window_x': -1},
+            {'window_y': -1}
+        ],
+        output='screen',
+    )
 
-    # Sensor monitor node
+    # Sensor monitor
     sensor_monitor_node = Node(
         package='stonefish_ros2',
         executable='sensor_monitor.py',
@@ -178,18 +167,7 @@ def generate_launch_description():
         prefix='xterm -e',
     )
 
-    # Path publisher for rviz trajectory display
-    path_publisher_node = Node(
-        package='eroas_navigation',
-        executable='path_publisher',
-        name='path_publisher',
-        parameters=[
-            {'namespace': 'GIRONA500'}
-        ],
-        output='screen',
-    )
-
-    # RViz visualization node
+    # RViz
     rviz_config_file = os.path.join(pkg_eroas_navigation, 'config', 'eroas_navigation.rviz')
     rviz_node = Node(
         package='rviz2',
@@ -215,10 +193,10 @@ def generate_launch_description():
         robot_state_publisher_node,
         odom_to_tf_node,
         stonefish_simulator_node,
-        cmd_vel_to_thrusters_node,
+        fls_to_pointcloud_node,
         eroas_node,
-        # teleop_node,  # Disabled
+        cmd_vel_to_thrusters_node,
         sensor_monitor_node,
-        path_publisher_node,
+        fls_viewer_node,
         rviz_node,
     ])

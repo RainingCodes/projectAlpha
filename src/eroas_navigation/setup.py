@@ -33,7 +33,8 @@ setup(
             'waypoint_navigator = eroas_navigation.waypoint_navigator:main',
             'fls_viewer = eroas_navigation.fls_viewer:main',
             'fls_recorder = eroas_navigation.fls_recorder:main',
-            'path_publisher = eroas_navigation.path_publisher:main'
+            'path_publisher = eroas_navigation.path_publisher:main',
+            'fls_to_pointcloud = eroas_navigation.fls_to_pointcloud:main'
         ],
     },
 )

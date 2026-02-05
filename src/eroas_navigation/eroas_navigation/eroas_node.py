@@ -9,8 +9,10 @@ from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, Path
 from std_msgs.msg import Float32MultiArray, ColorRGBA
 from std_srvs.srv import Trigger
+from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import PoseStamped, Vector3
+import sensor_msgs_py.point_cloud2 as pc2
 import numpy as np
 from typing import Optional
 
@@ -95,13 +97,13 @@ class EROASNode(Node):
             10
         )
 
-        # TODO: Add FLS sonar subscription
-        # self.sonar_sub = self.create_subscription(
-        #     SonarScan,
-        #     f'/{self.namespace}/sonar',
-        #     self.sonar_callback,
-        #     10
-        # )
+        # FLS point cloud subscription
+        self.fls_sub = self.create_subscription(
+            PointCloud2,
+            f'/{self.namespace}/fls_pointcloud',
+            self.fls_callback,
+            10
+        )
 
         # ROS2 publishers
         self.cmd_vel_pub = self.create_publisher(
@@ -132,6 +134,12 @@ class EROASNode(Node):
         self.control_timer = self.create_timer(
             1.0 / self.control_freq,
             self.control_loop
+        )
+
+        # Visualization timer (slower rate, independent of navigation state)
+        self.viz_timer = self.create_timer(
+            0.5,  # 2 Hz
+            self.publish_visualization
         )
 
         self.get_logger().info('EROAS Node initialized')
@@ -175,13 +183,117 @@ class EROASNode(Node):
 
         self.state_received = True
 
-    def sonar_callback(self, msg):
+    def fls_callback(self, msg: PointCloud2):
         """
-        Process FLS sonar data
-        TODO: Replace with actual Stonefish FLS message type
+        Process FLS point cloud data
+        Converts to beam intensities for SPD2C and updates SCG obstacle memory
         """
-        # Placeholder - will extract intensity array from FLS message
-        self.sonar_intensities = np.array(msg.data)
+        try:
+            # Convert PointCloud2 to numpy array
+            points = []
+            intensities = []
+
+            for point in pc2.read_points(msg, field_names=("x", "y", "z", "intensity"), skip_nans=True):
+                points.append([point[0], point[1], point[2]])
+                intensities.append(point[3])
+
+            if len(points) == 0:
+                # No obstacles detected
+                self.sonar_intensities = np.zeros(512)
+                return
+
+            points = np.array(points)
+            intensities = np.array(intensities)
+
+            # Convert 3D points to 1D beam intensity array for SPD2C
+            self.sonar_intensities = self._pointcloud_to_beams(points, intensities)
+
+            # Transform points from FLS frame to world NED frame
+            points_world = self._transform_to_world(points)
+
+            # Update SCG obstacle memory
+            timestamp = self.get_clock().now().seconds_nanoseconds()[0]
+            self.scg.update(points_world, self.position, timestamp)
+
+        except Exception as e:
+            self.get_logger().error(f'Error in FLS callback: {str(e)}')
+
+    def _pointcloud_to_beams(self, points: np.ndarray, intensities: np.ndarray) -> np.ndarray:
+        """
+        Convert 3D point cloud to 1D beam intensity array
+        Projects points onto horizontal plane and bins by angle
+
+        Args:
+            points: Nx3 array of points in FLS frame
+            intensities: N array of intensity values
+
+        Returns:
+            512-element beam intensity array
+        """
+        beam_intensities = np.zeros(512)
+        fov_h = np.deg2rad(90.0)
+
+        for i, point in enumerate(points):
+            x, y, z = point
+
+            # Calculate bearing angle in horizontal plane
+            angle = np.arctan2(y, x)
+
+            # Check if within FOV
+            if abs(angle) > fov_h / 2:
+                continue
+
+            # Map angle to beam index
+            # Angle range: [-45°, 45°] → beam index [0, 511]
+            beam_idx = int((angle + fov_h/2) / fov_h * 512)
+            beam_idx = np.clip(beam_idx, 0, 511)
+
+            # Use actual intensity from point cloud
+            # Take maximum intensity per beam (closest/strongest obstacle)
+            beam_intensities[beam_idx] = max(beam_intensities[beam_idx], intensities[i])
+
+        return beam_intensities
+
+    def _transform_to_world(self, points: np.ndarray) -> np.ndarray:
+        """
+        Transform points from FLS frame to world NED frame
+
+        FLS frame: origin at sensor, X forward, Y right, Z down
+        World NED: origin at (0,0,0), X north, Y east, Z down
+
+        Args:
+            points: Nx3 array of points in FLS frame
+
+        Returns:
+            Nx3 array of points in world NED frame
+        """
+        # FLS is mounted at vehicle front: xyz="-0.75 0.0 0.0"
+        # FLS orientation: rpy="1.5708 0.0 -1.5708"
+        # This means FLS X-axis aligns with vehicle X-axis (forward)
+
+        # Rotate points by vehicle heading (yaw in NED frame)
+        cos_h = np.cos(self.heading)
+        sin_h = np.sin(self.heading)
+
+        points_world = np.zeros_like(points)
+        for i, point in enumerate(points):
+            # Rotate by heading (yaw) in NED horizontal plane
+            x_rel = point[0] * cos_h - point[1] * sin_h
+            y_rel = point[0] * sin_h + point[1] * cos_h
+            z_rel = point[2]
+
+            # Translate to world frame (add vehicle position)
+            # Also account for FLS sensor offset (-0.75m in vehicle X)
+            fls_offset_x = -0.75 * cos_h
+            fls_offset_y = -0.75 * sin_h
+
+            points_world[i] = [
+                self.position[0] + x_rel + fls_offset_x,
+                self.position[1] + y_rel + fls_offset_y,
+                self.position[2] + z_rel
+            ]
+
+        return points_world
 
     def start_callback(self, request, response):
         """Start navigation service callback"""
@@ -229,72 +341,53 @@ class EROASNode(Node):
             self.goal[0] - self.position[0]
         )
 
-        # TODO: For now, use simple direct navigation without sonar
-        # Will integrate SPD2C once FLS is working
+        # ============================================================
+        # EROAS PIPELINE: SPD2C → SCG → ST-CBF
+        # ============================================================
+
         # Step 1: SPD2C - Generate reference commands from sonar scan
-        # spd2c_output = self.spd2c.process(
-        #     self.sonar_intensities,
-        #     goal_bearing,
-        #     self.heading
-        # )
+        spd2c_output = self.spd2c.process(
+            self.sonar_intensities,
+            goal_bearing,
+            self.heading
+        )
 
-        # Simple direct navigation to goal
-        heading_error = goal_bearing - self.heading
-        # Normalize to [-pi, pi]
-        while heading_error > np.pi:
-            heading_error -= 2 * np.pi
-        while heading_error < -np.pi:
-            heading_error += 2 * np.pi
+        # Extract reference velocity and yaw rate from SPD2C
+        v_ref = np.array([spd2c_output.vx_ref, spd2c_output.vy_ref, spd2c_output.vz_ref])
+        r_ref = spd2c_output.r_ref
 
-        # EROAS-inspired control: reduce speed when heading error is large
-        # If heading error > 90 degrees, stop and rotate in place
-        abs_heading_error = abs(heading_error)
-
-        if abs_heading_error > np.deg2rad(90):
-            # Large heading error: rotate in place, no forward motion
-            vx_ref = 0.0
-            Kt = 1.0  # Moderate rotation speed
-        else:
-            # Small heading error: move forward with speed proportional to alignment
-            max_heading_error = np.deg2rad(45)  # 45 degrees tolerance
-            heading_factor = max(0.0, 1.0 - abs_heading_error / max_heading_error)
-
-            v_max = 0.8
-            vx_ref = v_max * heading_factor
-            vx_ref = max(0.2, vx_ref)  # Minimum forward speed when heading is good
-            Kt = 1.5  # Faster rotation when moving
-
-        # Yaw rate control
-        yaw_rate_ref = Kt * heading_error
-        yaw_rate_ref = np.clip(yaw_rate_ref, -1.0, 1.0)
-
-        # Depth control
+        # Add depth control (independent of horizontal navigation)
         depth_error = self.goal[2] - self.position[2]
-        vz_ref = 0.5 * depth_error
-        vz_ref = np.clip(vz_ref, -0.5, 0.5)
+        v_ref[2] = 0.5 * depth_error
+        v_ref[2] = np.clip(v_ref[2], -0.5, 0.5)
 
-        # Construct reference velocity vector
-        v_ref = np.array([vx_ref, 0.0, vz_ref])
-        r_ref = yaw_rate_ref
+        # Step 2: SCG - Get closest obstacle from memory
+        closest_obstacle = self.scg.get_closest_obstacle(
+            self.position,
+            mode='H'  # Horizontal mode for 2D navigation
+        )
 
-        # TODO: Step 2: SCG - Update obstacle memory (disabled until FLS working)
-        # TODO: Step 3: ST-CBF - Filter velocity for safety (disabled until FLS working)
-
-        # For now, directly publish reference velocity without obstacle avoidance
-        v_safe = v_ref
+        # Step 3: ST-CBF - Filter velocity for safety
+        v_safe = self.stcbf.filter(
+            v_ref,
+            self.position,
+            closest_obstacle,
+            mode='H'
+        )
 
         # Step 4: Publish safe velocity command
         self.publish_velocity(v_safe, r_ref)
 
-        # Step 5: Publish visualization markers
-        self.publish_visualization(v_safe, r_ref)
+        # Debug logging
+        obstacle_status = "obstacle detected" if closest_obstacle is not None else "clear"
+        obstacle_dist = np.linalg.norm(self.position[:2] - closest_obstacle[:2]) if closest_obstacle is not None else float('inf')
 
-        # Debug logging - use INFO to see it
         self.get_logger().info(
             f'Pos: [{self.position[0]:.2f}, {self.position[1]:.2f}, {self.position[2]:.2f}], '
             f'Dist: {distance_to_goal:.2f}m, '
-            f'Hdg_err: {np.rad2deg(heading_error):.1f}deg, '
-            f'vx: {vx_ref:.2f}m/s, yaw_rate: {np.rad2deg(yaw_rate_ref):.1f}deg/s',
+            f'vx_ref: {spd2c_output.vx_ref:.2f}→{v_safe[0]:.2f}m/s, '
+            f'SCG: {self.scg.get_memory_size()} pts, '
+            f'Obstacle: {obstacle_status} ({obstacle_dist:.2f}m)',
             throttle_duration_sec=1.0
         )
 
@@ -315,16 +408,18 @@ class EROASNode(Node):
         cmd = Twist()
         self.cmd_vel_pub.publish(cmd)
 
-    def publish_visualization(self, velocity: np.ndarray, yaw_rate: float):
+    def publish_visualization(self):
         """Publish visualization markers for RViz"""
+        if not self.state_received:
+            return
+
         markers = MarkerArray()
         now = self.get_clock().now().to_msg()
 
         # NOTE: RViz uses ENU (East-North-Up) but we use NED (North-East-Down)
         # Proper coordinate transformation: ENU_X=NED_Y, ENU_Y=NED_X, ENU_Z=-NED_Z
 
-        # Marker 1: Start position (yellow sphere) - floating in air like Stonefish
-        # Stonefish has it at z=-1.0 (1m above water surface)
+        # Marker 1: Start position (yellow sphere)
         start_marker = Marker()
         start_marker.header.frame_id = "world_ned"
         start_marker.header.stamp = now
@@ -332,21 +427,21 @@ class EROASNode(Node):
         start_marker.id = 0
         start_marker.type = Marker.SPHERE
         start_marker.action = Marker.ADD
-        start_marker.pose.position.x = 0.0  # NED Y (East)
-        start_marker.pose.position.y = 0.0  # NED X (North)
-        start_marker.pose.position.z = 1.0  # -NED Z (Up)
+        # NED to ENU transformation (same as waypoint_navigator.py)
+        start_marker.pose.position.x = 0.0  # NED Y -> ENU X
+        start_marker.pose.position.y = 0.0  # NED X -> ENU Y
+        start_marker.pose.position.z = -(-1.0)  # -NED Z -> ENU Z (start at z=-1.0 in NED)
         start_marker.pose.orientation.w = 1.0
-        start_marker.scale.x = 0.5
-        start_marker.scale.y = 0.5
-        start_marker.scale.z = 0.5
+        start_marker.scale.x = 1.0
+        start_marker.scale.y = 1.0
+        start_marker.scale.z = 1.0
         start_marker.color.r = 1.0
         start_marker.color.g = 1.0
         start_marker.color.b = 0.0
         start_marker.color.a = 1.0
         markers.markers.append(start_marker)
 
-        # Marker 2: Goal position (red sphere) - floating in air like Stonefish
-        # Stonefish has it at z=-1.0 (1m above water surface)
+        # Marker 2: Goal position (red sphere)
         goal_marker = Marker()
         goal_marker.header.frame_id = "world_ned"
         goal_marker.header.stamp = now
@@ -354,13 +449,14 @@ class EROASNode(Node):
         goal_marker.id = 1
         goal_marker.type = Marker.SPHERE
         goal_marker.action = Marker.ADD
-        goal_marker.pose.position.x = float(self.goal[1])  # NED Y (East)
-        goal_marker.pose.position.y = float(self.goal[0])  # NED X (North)
-        goal_marker.pose.position.z = 1.0  # -NED Z (Up)
+        # NED to ENU transformation (same as waypoint_navigator.py)
+        goal_marker.pose.position.x = float(self.goal[1])  # NED Y -> ENU X
+        goal_marker.pose.position.y = float(self.goal[0])  # NED X -> ENU Y
+        goal_marker.pose.position.z = -float(self.goal[2])  # -NED Z -> ENU Z
         goal_marker.pose.orientation.w = 1.0
-        goal_marker.scale.x = 0.5
-        goal_marker.scale.y = 0.5
-        goal_marker.scale.z = 0.5
+        goal_marker.scale.x = 1.0
+        goal_marker.scale.y = 1.0
+        goal_marker.scale.z = 1.0
         goal_marker.color.r = 1.0
         goal_marker.color.g = 0.0
         goal_marker.color.b = 0.0
@@ -418,43 +514,6 @@ class EROASNode(Node):
         heading_marker.color.b = 1.0
         heading_marker.color.a = 1.0
         markers.markers.append(heading_marker)
-
-        # Marker 5: Velocity vector (cyan)
-        if np.linalg.norm(velocity) > 0.01:
-            vel_marker = Marker()
-            vel_marker.header.frame_id = "world_ned"
-            vel_marker.header.stamp = now
-            vel_marker.ns = "velocity"
-            vel_marker.id = 4
-            vel_marker.type = Marker.ARROW
-            vel_marker.action = Marker.ADD
-
-            # Start point (NED → ENU)
-            vel_marker.points.append(Point(
-                x=float(self.position[1]),  # NED Y
-                y=float(self.position[0]),  # NED X
-                z=-float(self.position[2])  # -NED Z
-            ))
-
-            # End point (velocity in body frame, need to convert to world frame)
-            vel_world_x_ned = float(self.position[0] + velocity[0] * np.cos(self.heading) - velocity[1] * np.sin(self.heading))
-            vel_world_y_ned = float(self.position[1] + velocity[0] * np.sin(self.heading) + velocity[1] * np.cos(self.heading))
-            vel_world_z_ned = float(self.position[2] + velocity[2])
-
-            # Convert NED to ENU
-            vel_marker.points.append(Point(
-                x=vel_world_y_ned,  # NED Y → ENU X
-                y=vel_world_x_ned,  # NED X → ENU Y
-                z=-vel_world_z_ned  # -NED Z → ENU Z
-            ))
-
-            vel_marker.scale.x = 0.1  # Shaft diameter
-            vel_marker.scale.y = 0.2  # Head diameter
-            vel_marker.color.r = 0.0
-            vel_marker.color.g = 1.0
-            vel_marker.color.b = 1.0
-            vel_marker.color.a = 1.0
-            markers.markers.append(vel_marker)
 
         # Publish all markers
         self.marker_pub.publish(markers)
