@@ -1,0 +1,8 @@
+# Optional: use with `docker buildx build -f docker/integrated/Dockerfile ...`
+# Note: Docker only auto-loads .dockerignore from the *context root* (.).
+# For root-context builds, prefer the repository root `.dockerignore`.
+.git
+install
+log
+build
+stonefish/build

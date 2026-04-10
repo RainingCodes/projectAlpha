@@ -1,0 +1,6 @@
+# Build context: repository root (.)
+.git
+install
+log
+build
+stonefish/build
