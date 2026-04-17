@@ -1,0 +1,85 @@
+# Stonefish + Ollama + llm-control (NVIDIA GPU 기본: stonefish·ollama)
+# NVIDIA Container Toolkit 필요. GPU 없는 머신이면 아래 stonefish/ollama 의 deploy 블록을 주석 처리하세요.
+#
+# 호스트 GUI:
+#   xhost +local:docker
+#   export DISPLAY="${DISPLAY:-:0}"
+#
+# 실행 (저장소 루트):
+#   docker compose -f docker/compose.llm.yaml up --build
+#
+# 소프트웨어 GL만 쓸 때: export LIBGL_ALWAYS_SOFTWARE=1
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    hostname: ollama
+    networks: [robot_dds]
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  stonefish:
+    image: projectalpha:jazzy-integrated
+    container_name: stonefish
+    hostname: stonefish
+    networks: [robot_dds]
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      XDG_RUNTIME_DIR: /tmp/xdg-stonefish
+      DISPLAY: ${DISPLAY:-:0}
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./stonefish-llm-stack.sh:/stonefish-llm-stack.sh:ro
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["/bin/bash", "/stonefish-llm-stack.sh"]
+
+  llm-control:
+    build:
+      context: ./llm-control
+      dockerfile: Dockerfile
+    image: projectalpha:llm-control
+    container_name: llm-control
+    hostname: llm-control
+    networks: [robot_dds]
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-medgemma:4b}
+      LLM_DUMMY: ${LLM_DUMMY:-0}
+      LLM_CONTROL_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - stonefish
+      - ollama
+
+networks:
+  robot_dds:
+    driver: bridge
+
+volumes:
+  ollama_data:

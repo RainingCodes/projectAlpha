@@ -78,6 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-geographic-msgs \
     ros-jazzy-action-msgs \
     ros-jazzy-robot-localization \
+    ros-jazzy-rmw-cyclonedds-cpp \
     xterm \
     && rm -rf /var/lib/apt/lists/*
 
