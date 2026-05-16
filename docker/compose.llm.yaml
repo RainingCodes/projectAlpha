@@ -1,16 +1,37 @@
-# Stonefish + Ollama + llm-control (NVIDIA GPU 기본: stonefish·ollama)
-# NVIDIA Container Toolkit 필요. GPU 없는 머신이면 아래 stonefish/ollama 의 deploy 블록을 주석 처리하세요.
-#
-# 호스트 GUI:
-#   xhost +local:docker
-#   export DISPLAY="${DISPLAY:-:0}"
-#
-# 실행 (저장소 루트):
-#   docker compose -f docker/compose.llm.yaml up --build
-#
-# 소프트웨어 GL만 쓸 때: export LIBGL_ALWAYS_SOFTWARE=1
-
 services:
+  vllm:
+    image: vllm/vllm-openai:v0.6.6.post1
+    container_name: vllm
+    hostname: vllm
+    networks: [robot_dds]
+    ports:
+      - "8000:8000"
+    ipc: host
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
+    command:
+      - --model
+      - LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+      - --dtype
+      - half
+      - --trust-remote-code
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -64,18 +85,21 @@ services:
     container_name: llm-control
     hostname: llm-control
     networks: [robot_dds]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - llm-settings.env
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-medgemma:4b}
-      LLM_DUMMY: ${LLM_DUMMY:-0}
-      LLM_CONTROL_PORT: "8080"
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
     ports:
       - "8080:8080"
     depends_on:
       - stonefish
-      - ollama
+      - vllm
+      # - ollama   # HF/vLLM 쓸 때는 굳이 필요 없음
 
 networks:
   robot_dds:
@@ -83,3 +107,4 @@ networks:
 
 volumes:
   ollama_data:
+  hf_cache:
