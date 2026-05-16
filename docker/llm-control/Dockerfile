@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     ros-jazzy-rmw-fastrtps-cpp \
+    ros-jazzy-rmw-cyclonedds-cpp \
     ros-jazzy-rclpy \
     ros-jazzy-geometry-msgs \
     ros-jazzy-nav-msgs \
@@ -20,6 +21,7 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY app ./app
+COPY llm_app_settings.json /app/llm_app_settings.json
 
 EXPOSE 8080
 

@@ -1,0 +1,14 @@
+{
+  "model": {
+    "provider": "huggingface",
+    "ollama_host": "http://ollama:11434",
+    "ollama_model": "medgemma:4b",
+    "huggingface_api_base": "http://vllm:8000/v1",
+    "huggingface_model": "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
+    "temperature": 0.2
+  },
+  "LLM_DUMMY": false,
+  "ODOM_TOPIC": "/GIRONA500/dynamics",
+  "CMD_VEL_TOPIC": "/GIRONA500/cmd_vel",
+  "LLM_CONTROL_PORT": 8080
+}
