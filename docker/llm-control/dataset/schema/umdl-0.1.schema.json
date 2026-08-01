@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/umdl/0.1/schema.json",
+  "title": "UMDL 0.1 Mission Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "intent",
+    "priority",
+    "decision",
+    "requirements",
+    "tasks",
+    "constraints",
+    "contingencies",
+    "requires_clarification",
+    "missing_fields",
+    "safe_fallback"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "umdl/0.1"
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "enum": [
+        "NAVIGATION",
+        "AREA_SURVEY",
+        "TARGET_SEARCH",
+        "SEARCH_AND_RESCUE",
+        "TARGET_INSPECTION",
+        "PIPELINE_INSPECTION",
+        "ENVIRONMENT_MONITORING",
+        "STATION_KEEPING",
+        "RETURN_TO_HOME",
+        "EMERGENCY_RESPONSE",
+        "MISSION_ABORT",
+        "UNSPECIFIED",
+        "UNSUPPORTED_OPERATION"
+      ]
+    },
+    "priority": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "decision": {
+      "enum": [
+        "EXECUTE",
+        "REQUEST_CLARIFICATION",
+        "REJECT",
+        "UNSUPPORTED"
+      ]
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_capabilities",
+        "preferred_sensor_roles"
+      ],
+      "properties": {
+        "required_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "preferred_sensor_roles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": true
+    },
+    "contingencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "when",
+          "then"
+        ],
+        "properties": {
+          "when": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "then": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "requires_clarification": {
+      "type": "boolean"
+    },
+    "missing_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "clarification_question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "safe_fallback": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "EXECUTE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tasks": {
+            "minItems": 1
+          },
+          "requires_clarification": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "REQUEST_CLARIFICATION"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "clarification_question"
+        ],
+        "properties": {
+          "tasks": {
+            "maxItems": 0
+          },
+          "requires_clarification": {
+            "const": true
+          },
+          "missing_fields": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "REJECT",
+              "UNSUPPORTED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason_code"
+        ],
+        "properties": {
+          "tasks": {
+            "maxItems": 0
+          },
+          "requires_clarification": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^task_[0-9]+$"
+        },
+        "type": {
+          "enum": [
+            "NAVIGATE",
+            "SEARCH",
+            "SURVEY",
+            "INSPECT",
+            "TRACK_TARGET",
+            "HOLD_POSITION",
+            "CHANGE_DEPTH",
+            "SURFACE",
+            "RETURN_HOME",
+            "SAMPLE",
+            "REPORT",
+            "WAIT",
+            "ABORT",
+            "AVOID_OBSTACLE"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "reference"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "POINT",
+                "RELATIVE_POINT",
+                "REGION",
+                "ROUTE",
+                "OBJECT",
+                "OBJECT_PART",
+                "OBJECT_CLASS",
+                "HOME",
+                "SURFACE",
+                "CURRENT_POSITION",
+                "CURRENT_MISSION",
+                "DETECTED_OBSTACLE"
+              ]
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pattern": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "DIRECT",
+                "WAYPOINT_SEQUENCE",
+                "LINE_FOLLOWING",
+                "LAWNMOWER",
+                "SPIRAL",
+                "CIRCLE",
+                "POLYGON",
+                "PERIMETER_FOLLOWING",
+                "PRIORITY_REGION_SEARCH"
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "completion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "condition"
+          ],
+          "properties": {
+            "condition": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "report_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

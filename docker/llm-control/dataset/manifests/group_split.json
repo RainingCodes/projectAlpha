@@ -1,0 +1,482 @@
+[
+  {
+    "group_id": "avoid_001",
+    "split": "test"
+  },
+  {
+    "group_id": "avoid_002",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_003",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_004",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_005",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_006",
+    "split": "validation"
+  },
+  {
+    "group_id": "avoid_007",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_008",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_009",
+    "split": "train"
+  },
+  {
+    "group_id": "avoid_010",
+    "split": "train"
+  },
+  {
+    "group_id": "env_001",
+    "split": "test"
+  },
+  {
+    "group_id": "env_002",
+    "split": "train"
+  },
+  {
+    "group_id": "env_003",
+    "split": "train"
+  },
+  {
+    "group_id": "env_004",
+    "split": "train"
+  },
+  {
+    "group_id": "env_005",
+    "split": "train"
+  },
+  {
+    "group_id": "env_006",
+    "split": "validation"
+  },
+  {
+    "group_id": "env_007",
+    "split": "train"
+  },
+  {
+    "group_id": "env_008",
+    "split": "train"
+  },
+  {
+    "group_id": "env_009",
+    "split": "train"
+  },
+  {
+    "group_id": "env_010",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_001",
+    "split": "validation"
+  },
+  {
+    "group_id": "hold_002",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_003",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_004",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_005",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_006",
+    "split": "test"
+  },
+  {
+    "group_id": "hold_007",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_008",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_009",
+    "split": "train"
+  },
+  {
+    "group_id": "hold_010",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_001",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_002",
+    "split": "test"
+  },
+  {
+    "group_id": "inspect_003",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_004",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_005",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_006",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_007",
+    "split": "validation"
+  },
+  {
+    "group_id": "inspect_008",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_009",
+    "split": "train"
+  },
+  {
+    "group_id": "inspect_010",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_001",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_002",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_003",
+    "split": "validation"
+  },
+  {
+    "group_id": "nav_004",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_005",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_006",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_007",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_008",
+    "split": "test"
+  },
+  {
+    "group_id": "nav_009",
+    "split": "train"
+  },
+  {
+    "group_id": "nav_010",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_001",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_002",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_003",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_004",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_005",
+    "split": "validation"
+  },
+  {
+    "group_id": "pipe_006",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_007",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_008",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_009",
+    "split": "train"
+  },
+  {
+    "group_id": "pipe_010",
+    "split": "test"
+  },
+  {
+    "group_id": "reject_001",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_002",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_003",
+    "split": "test"
+  },
+  {
+    "group_id": "reject_004",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_005",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_006",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_007",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_008",
+    "split": "validation"
+  },
+  {
+    "group_id": "reject_009",
+    "split": "train"
+  },
+  {
+    "group_id": "reject_010",
+    "split": "train"
+  },
+  {
+    "group_id": "return_001",
+    "split": "train"
+  },
+  {
+    "group_id": "return_002",
+    "split": "train"
+  },
+  {
+    "group_id": "return_003",
+    "split": "validation"
+  },
+  {
+    "group_id": "return_004",
+    "split": "train"
+  },
+  {
+    "group_id": "return_005",
+    "split": "train"
+  },
+  {
+    "group_id": "return_006",
+    "split": "train"
+  },
+  {
+    "group_id": "return_007",
+    "split": "train"
+  },
+  {
+    "group_id": "return_008",
+    "split": "test"
+  },
+  {
+    "group_id": "return_009",
+    "split": "train"
+  },
+  {
+    "group_id": "return_010",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_001",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_002",
+    "split": "test"
+  },
+  {
+    "group_id": "sar_003",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_004",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_005",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_006",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_007",
+    "split": "validation"
+  },
+  {
+    "group_id": "sar_008",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_009",
+    "split": "train"
+  },
+  {
+    "group_id": "sar_010",
+    "split": "train"
+  },
+  {
+    "group_id": "search_001",
+    "split": "train"
+  },
+  {
+    "group_id": "search_002",
+    "split": "train"
+  },
+  {
+    "group_id": "search_003",
+    "split": "validation"
+  },
+  {
+    "group_id": "search_004",
+    "split": "train"
+  },
+  {
+    "group_id": "search_005",
+    "split": "train"
+  },
+  {
+    "group_id": "search_006",
+    "split": "train"
+  },
+  {
+    "group_id": "search_007",
+    "split": "train"
+  },
+  {
+    "group_id": "search_008",
+    "split": "test"
+  },
+  {
+    "group_id": "search_009",
+    "split": "train"
+  },
+  {
+    "group_id": "search_010",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_001",
+    "split": "validation"
+  },
+  {
+    "group_id": "survey_002",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_003",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_004",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_005",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_006",
+    "split": "test"
+  },
+  {
+    "group_id": "survey_007",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_008",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_009",
+    "split": "train"
+  },
+  {
+    "group_id": "survey_010",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_001",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_002",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_003",
+    "split": "validation"
+  },
+  {
+    "group_id": "uncertain_004",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_005",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_006",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_007",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_008",
+    "split": "test"
+  },
+  {
+    "group_id": "uncertain_009",
+    "split": "train"
+  },
+  {
+    "group_id": "uncertain_010",
+    "split": "train"
+  }
+]

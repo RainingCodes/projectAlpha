@@ -1,0 +1,27 @@
+{
+  "generation_provider": "OpenAI ChatGPT",
+  "generation_model": "GPT-5.6 Thinking",
+  "reasoning_level": "high",
+  "generation_date": "2026-08-01",
+  "temperature": "not_exposed",
+  "top_p": "not_exposed",
+  "generator_mode": "canonical_first_then_paraphrase",
+  "generation_method": "ChatGPT-assisted canonical template",
+  "temperature_recommendation": 0.4,
+  "top_p_recommendation": 0.9,
+  "variants_per_canonical_group": 6,
+  "numeric_preservation": "strict",
+  "human_review_status": "not_completed",
+  "forbidden_generation_behavior": [
+    "Do not invent targets, coordinates, depths, distances, sensors, or constraints.",
+    "Do not generate both command and target freely in the same pass.",
+    "Do not place paraphrases from the same canonical group in different splits.",
+    "Do not convert UMDL directly into thruster or ROS Twist values during dataset generation."
+  ],
+  "planned_review_policy": {
+    "initial_batch_full_review": 300,
+    "normal_family_sampling_rate": 0.1,
+    "safety_family_sampling_rate": 0.5,
+    "test_set_target_review_rate": 1.0
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "dataset_name": "UMDL Platform-Independent Underwater Mission Seed",
+  "dataset_version": "0.1.0-seed",
+  "schema_version": "umdl/0.1",
+  "created_for": "Stonefish/ROS2 LLM mission-planning integration",
+  "seed": 20260801,
+  "split_strategy": "stratified_group_split",
+  "split_ratios_by_group": {
+    "train": 0.8,
+    "validation": 0.1,
+    "test": 0.1
+  },
+  "canonical_group_count": 120,
+  "sample_count": 720,
+  "samples_per_group": 6,
+  "group_counts": {
+    "test": 12,
+    "train": 96,
+    "validation": 12
+  },
+  "sample_counts": {
+    "test": 72,
+    "train": 576,
+    "validation": 72
+  },
+  "family_sample_counts": {
+    "ambiguous": 60,
+    "area_survey": 60,
+    "environment": 60,
+    "navigation": 60,
+    "obstacle": 60,
+    "pipeline": 60,
+    "reject": 60,
+    "return": 60,
+    "sar": 60,
+    "station": 60,
+    "target_inspection": 60,
+    "target_search": 60
+  },
+  "decision_sample_counts": {
+    "EXECUTE": 600,
+    "REJECT": 60,
+    "REQUEST_CLARIFICATION": 30,
+    "UNSUPPORTED": 30
+  },
+  "language_sample_counts": {
+    "en": 120,
+    "ko": 480,
+    "mixed": 120
+  },
+  "all_sha256": "a5766e05fc947c8440e7a6924551b27353a30f6982599b8ef42c1d78720373ed",
+  "notes": [
+    "All paraphrases sharing a group_id are kept in one split.",
+    "The seed dataset is for pipeline validation and initial SFT experiments, not final research claims.",
+    "Stonefish rollout labels and adaptive-heading data must be collected separately."
+  ]
+}

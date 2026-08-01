@@ -30,6 +30,7 @@ from fastapi import FastAPI, HTTPException
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from pydantic import BaseModel, ConfigDict, Field
+from app.umdl_router import create_umdl_router
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
@@ -158,6 +159,26 @@ def _int_setting(name: str, default: int) -> int:
     return default
 
 
+def _bool_setting(name: str, default: bool) -> bool:
+    ev = _env_nonempty(name)
+    if ev is not None:
+        return ev.lower() in ("1", "true", "yes", "on")
+    if name in _file_cfg:
+        fv = _file_cfg[name]
+        if isinstance(fv, bool):
+            return fv
+        if fv is not None and str(fv).strip() != "":
+            return str(fv).strip().lower() in ("1", "true", "yes", "on")
+    mb = _model_block()
+    if name in mb:
+        fv = mb[name]
+        if isinstance(fv, bool):
+            return fv
+        if fv is not None and str(fv).strip() != "":
+            return str(fv).strip().lower() in ("1", "true", "yes", "on")
+    return default
+
+
 def _bool_dummy() -> bool:
     ev = _env_nonempty("LLM_DUMMY")
     if ev is not None:
@@ -214,6 +235,15 @@ LLM_HTTP_TIMEOUT = _pick_float("LLM_HTTP_TIMEOUT", 120.0, "LLM_HTTP_TIMEOUT", "h
 
 LLM_DUMMY = _bool_dummy()
 LLM_CONTROL_PORT = _int_setting("LLM_CONTROL_PORT", 8080)
+UMDL_MAX_TOKENS = _int_setting("UMDL_MAX_TOKENS", 512)
+UMDL_GUIDED_JSON = _bool_setting("UMDL_GUIDED_JSON", True)
+UMDL_GUIDED_BACKEND = _str_setting("UMDL_GUIDED_BACKEND", "outlines")
+UMDL_FEW_SHOT = _bool_setting("UMDL_FEW_SHOT", True)
+UMDL_MAX_RETRIES = _int_setting("UMDL_MAX_RETRIES", 0)
+UMDL_SAFETY_FAST_PATH = _bool_setting("UMDL_SAFETY_FAST_PATH", True)
+UMDL_DATASET_ROOT = _str_setting("UMDL_DATASET_ROOT", "/app/dataset")
+UMDL_SCHEMA_PATH = _str_setting("UMDL_SCHEMA_PATH", "/app/dataset/schema/umdl-0.1.schema.json")
+UMDL_GENERATION_SCHEMA_PATH = _str_setting("UMDL_GENERATION_SCHEMA_PATH", "/app/dataset/schema/umdl-generation-0.1.schema.json")
 
 LOG.info(
     "LLM backend provider=%s | ollama=%s@%s | huggingface model=%s @ %s "
@@ -704,6 +734,29 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+app.include_router(
+    create_umdl_router(
+        {
+            "provider": LLM_PROVIDER,
+            "hf_api_base": HF_API_BASE,
+            "hf_model": HUGGINGFACE_MODEL,
+            "ollama_host": OLLAMA_HOST,
+            "ollama_model": OLLAMA_MODEL,
+            "temperature": LLM_TEMPERATURE,
+            "max_tokens": UMDL_MAX_TOKENS,
+            "timeout_seconds": LLM_HTTP_TIMEOUT,
+            "dataset_root": UMDL_DATASET_ROOT,
+            "schema_path": UMDL_SCHEMA_PATH,
+            "generation_schema_path": UMDL_GENERATION_SCHEMA_PATH,
+            "guided_json": UMDL_GUIDED_JSON,
+            "guided_decoding_backend": UMDL_GUIDED_BACKEND,
+            "few_shot_enabled": UMDL_FEW_SHOT,
+            "max_retries": UMDL_MAX_RETRIES,
+            "safety_fast_path": UMDL_SAFETY_FAST_PATH,
+        }
+    )
+)
+
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
@@ -727,6 +780,9 @@ async def health() -> dict[str, Any]:
         "llm_dummy": LLM_DUMMY,
         "llm_config_path": LLM_CONFIG_PATH,
         "llm_config_json_keys": sorted(_file_cfg.keys()) if _file_cfg else [],
+        "umdl_dataset_root": UMDL_DATASET_ROOT,
+        "umdl_schema_path": UMDL_SCHEMA_PATH,
+        "umdl_max_tokens": UMDL_MAX_TOKENS,
     }
 
 

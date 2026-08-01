@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UMDL compact generation IR 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent",
+    "priority",
+    "decision",
+    "required_capabilities",
+    "preferred_sensor_roles",
+    "tasks",
+    "requires_clarification",
+    "missing_fields",
+    "safe_fallback",
+    "reason_code"
+  ],
+  "properties": {
+    "intent": {
+      "type": "string",
+      "enum": [
+        "NAVIGATION",
+        "AREA_SURVEY",
+        "TARGET_SEARCH",
+        "SEARCH_AND_RESCUE",
+        "TARGET_INSPECTION",
+        "PIPELINE_INSPECTION",
+        "ENVIRONMENT_MONITORING",
+        "STATION_KEEPING",
+        "RETURN_TO_HOME",
+        "EMERGENCY_RESPONSE",
+        "MISSION_ABORT",
+        "UNSPECIFIED",
+        "UNSUPPORTED_OPERATION"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["EXECUTE", "REQUEST_CLARIFICATION", "REJECT", "UNSUPPORTED"]
+    },
+    "required_capabilities": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "WAYPOINT_NAVIGATION",
+          "DEPTH_CONTROL",
+          "STATION_KEEPING",
+          "OBSTACLE_AVOIDANCE",
+          "RETURN_NAVIGATION",
+          "TARGET_DETECTION",
+          "AREA_COVERAGE",
+          "STRUCTURE_INSPECTION",
+          "PIPELINE_FOLLOWING",
+          "ENVIRONMENT_SAMPLING",
+          "DATA_LOGGING",
+          "SURFACE_COMMUNICATION"
+        ]
+      }
+    },
+    "preferred_sensor_roles": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "FORWARD_TARGET_DETECTION",
+          "ACOUSTIC_IMAGING",
+          "OPTICAL_IMAGING",
+          "DEPTH_MEASUREMENT",
+          "POSITION_ESTIMATION",
+          "ENVIRONMENT_SENSING",
+          "PIPELINE_DETECTION"
+        ]
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "target_type",
+          "target_reference",
+          "pattern",
+          "completion_condition",
+          "report_type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "NAVIGATE",
+              "SEARCH",
+              "SURVEY",
+              "INSPECT",
+              "TRACK_TARGET",
+              "HOLD_POSITION",
+              "CHANGE_DEPTH",
+              "SURFACE",
+              "RETURN_HOME",
+              "SAMPLE",
+              "REPORT",
+              "WAIT",
+              "ABORT",
+              "AVOID_OBSTACLE"
+            ]
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "POINT",
+              "RELATIVE_POINT",
+              "REGION",
+              "ROUTE",
+              "OBJECT",
+              "OBJECT_PART",
+              "OBJECT_CLASS",
+              "HOME",
+              "SURFACE",
+              "CURRENT_POSITION",
+              "CURRENT_MISSION",
+              "DETECTED_OBSTACLE"
+            ]
+          },
+          "target_reference": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+          },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "DIRECT",
+              "WAYPOINT_SEQUENCE",
+              "LINE_FOLLOWING",
+              "LAWNMOWER",
+              "SPIRAL",
+              "CIRCLE",
+              "POLYGON",
+              "PERIMETER_FOLLOWING",
+              "PRIORITY_REGION_SEARCH"
+            ]
+          },
+          "completion_condition": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+          },
+          "report_type": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+          }
+        }
+      }
+    },
+    "requires_clarification": {"type": "boolean"},
+    "missing_fields": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 48,
+        "pattern": "^[a-z0-9_]+$"
+      }
+    },
+    "safe_fallback": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "HOLD_POSITION",
+        "STOP_AND_HOLD",
+        "RETURN_HOME",
+        "SURFACE",
+        "EMERGENCY_SURFACE",
+        "ABORT_MISSION"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "MISSING_INFORMATION",
+        "UNAVAILABLE_CAPABILITY",
+        "SAFETY_CONSTRAINT_VIOLATION",
+        "UNSUPPORTED_OPERATION",
+        "AMBIGUOUS_COMMAND"
+      ]
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "purpose": "initial supervised fine-tuning smoke test",
+  "base_model": "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
+  "dataset_format": "chat_messages_jsonl",
+  "files": {
+    "train": "/app/dataset/chat/train.jsonl",
+    "validation": "/app/dataset/chat/validation.jsonl",
+    "test": "/app/dataset/chat/test.jsonl"
+  },
+  "sequence": {
+    "max_seq_length": 2048,
+    "truncate": true,
+    "train_on_assistant_only": true
+  },
+  "precision": {
+    "fp16": true,
+    "bf16": false,
+    "reason": "Tesla V100 does not support BF16 training."
+  },
+  "optimization": {
+    "epochs": 3,
+    "learning_rate": 0.0002,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.05,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 2,
+    "gradient_accumulation_steps": 16,
+    "gradient_checkpointing": true,
+    "max_grad_norm": 1.0,
+    "logging_steps": 10,
+    "evaluation_strategy": "epoch",
+    "save_strategy": "epoch",
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "eval_loss",
+    "greater_is_better": false,
+    "seed": 20260801
+  },
+  "lora": {
+    "enabled": true,
+    "r": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "bias": "none",
+    "target_modules": "all-linear",
+    "note": "Confirm target-module discovery against the installed PEFT and EXAONE implementation before a long run."
+  },
+  "evaluation": {
+    "primary": [
+      "json_valid_rate",
+      "umdl_schema_valid_rate",
+      "decision_accuracy",
+      "intent_accuracy",
+      "task_sequence_exact_match",
+      "parameter_accuracy",
+      "safety_violation_rate",
+      "clarification_accuracy"
+    ],
+    "secondary": ["bleu", "meteor"],
+    "note": "BLEU/METEOR are only auxiliary because executable mission semantics matter more than text similarity."
+  },
+  "warning": "The included 720-sample seed is for pipeline verification. Expand to at least 5000 reviewed samples before interpreting model quality."
+}

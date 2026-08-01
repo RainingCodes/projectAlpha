@@ -1,0 +1,16 @@
+{
+  "dataset_root": "/app/dataset",
+  "schema_path": "/app/dataset/schema/umdl-0.1.schema.json",
+  "planner_endpoint": "/mission/plan",
+  "dataset_stats_endpoint": "/dataset/stats",
+  "dataset_sample_endpoint": "/dataset/sample",
+  "planner_generation": {
+    "temperature": 0.0,
+    "max_tokens": 512,
+    "timeout_seconds": 120
+  },
+  "actuation_policy": {
+    "publish_ros_twist_from_umdl_endpoint": false,
+    "reason": "UMDL is a high-level platform-independent plan and requires a separate platform adapter/compiler."
+  }
+}

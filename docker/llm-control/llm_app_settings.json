@@ -10,5 +10,9 @@
   "LLM_DUMMY": false,
   "ODOM_TOPIC": "/GIRONA500/dynamics",
   "CMD_VEL_TOPIC": "/GIRONA500/cmd_vel",
-  "LLM_CONTROL_PORT": 8080
+  "LLM_CONTROL_PORT": 8080,
+  "UMDL_MAX_TOKENS": 512,
+  "UMDL_DATASET_ROOT": "/app/dataset",
+  "UMDL_SCHEMA_PATH": "/app/dataset/schema/umdl-0.1.schema.json",
+  "UMDL_GENERATION_SCHEMA_PATH": "/app/dataset/schema/umdl-generation-0.1.schema.json"
 }

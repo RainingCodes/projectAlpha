@@ -1,0 +1,54 @@
+{
+  "dataset_name": "UMDL Platform-Independent Underwater Mission Dataset",
+  "dataset_version": "0.1.0-seed",
+  "schema_version": "umdl/0.1",
+  "task": "natural_language_and_runtime_context_to_umdl",
+  "seed": 20260801,
+  "canonical_group_count": 120,
+  "samples_per_group": 6,
+  "expected_sample_count": 720,
+  "languages_and_styles": [
+    {"language": "ko", "style": "KO_STANDARD"},
+    {"language": "ko", "style": "KO_SHORT"},
+    {"language": "ko", "style": "KO_FIELD"},
+    {"language": "ko", "style": "KO_POLITE"},
+    {"language": "en", "style": "EN_STANDARD"},
+    {"language": "mixed", "style": "KO_EN_MIXED"}
+  ],
+  "split": {
+    "unit": "group_id",
+    "strategy": "stratified_group_split",
+    "train": 0.8,
+    "validation": 0.1,
+    "test": 0.1,
+    "leakage_rule": "All paraphrases with the same group_id must remain in exactly one split."
+  },
+  "quality_gates": {
+    "json_schema_valid_rate_min": 1.0,
+    "duplicate_id_count_max": 0,
+    "cross_split_group_overlap_max": 0,
+    "target_hash_mismatch_within_group_max": 0,
+    "empty_command_count_max": 0,
+    "human_review_required_for_final_test_set": true
+  },
+  "scope": {
+    "included": [
+      "sequential missions",
+      "state-conditioned mission planning",
+      "area survey and target search",
+      "structure and pipeline inspection",
+      "station keeping",
+      "return and emergency response",
+      "unsafe-command rejection",
+      "ambiguity clarification",
+      "unsupported-capability detection"
+    ],
+    "excluded_until_later_versions": [
+      "multi-AUV coordination",
+      "manipulator operation",
+      "docking",
+      "thruster-level control",
+      "Stonefish adaptive-heading rollout labels"
+    ]
+  }
+}
