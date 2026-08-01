@@ -1,0 +1,169 @@
+services:
+  # ============================================================
+  # vLLM
+  # 물리 GPU 0번 Tesla V100 사용
+  # ============================================================
+  vllm:
+    image: vllm/vllm-openai:v0.6.6.post1
+    container_name: vllm
+    hostname: vllm
+
+    networks:
+      - robot_dds
+
+    ports:
+      - "8000:8000"
+
+    ipc: host
+
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
+
+    command:
+      - --model
+      - LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+      - --dtype
+      - half
+      - --trust-remote-code
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - "0"
+              capabilities:
+                - gpu
+
+  # ============================================================
+  # Ollama
+  # 필요할 때만 profile로 실행
+  # 물리 GPU 0번 Tesla V100 사용
+  # ============================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    hostname: ollama
+
+    profiles:
+      - ollama
+
+    networks:
+      - robot_dds
+
+    volumes:
+      - ollama_data:/root/.ollama
+
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - "0"
+              capabilities:
+                - gpu
+
+  # ============================================================
+  # Stonefish
+  # 물리 GPU 1번 Tesla V100 사용
+  # XRDP DISPLAY :10 + NVIDIA PRIME Render Offload
+  # ============================================================
+  stonefish:
+    image: projectalpha:jazzy-integrated
+    container_name: stonefish
+    hostname: stonefish
+
+    networks:
+      - robot_dds
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+
+      DISPLAY: ${DISPLAY:?DISPLAY가 설정되지 않았습니다}
+      XAUTHORITY: /tmp/.docker.xauth
+      XDG_RUNTIME_DIR: /tmp/xdg-stonefish
+
+      __NV_PRIME_RENDER_OFFLOAD: "1"
+      __GLX_VENDOR_LIBRARY_NAME: "nvidia"
+
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+
+      QT_X11_NO_MITSHM: "1"
+      SDL_VIDEODRIVER: x11
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:ro
+      - ./stonefish-llm-stack.sh:/stonefish-llm-stack.sh:ro
+
+    stdin_open: true
+    tty: true
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - "1"
+              capabilities:
+                - gpu
+
+    command: ["/bin/bash", "/stonefish-llm-stack.sh"]
+
+  # ============================================================
+  # LLM Control
+  # ============================================================
+  llm-control:
+    build:
+      context: ./llm-control
+      dockerfile: Dockerfile
+
+    image: projectalpha:llm-control
+    container_name: llm-control
+    hostname: llm-control
+
+    networks:
+      - robot_dds
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    env_file:
+      - llm-settings.env
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      - stonefish
+      - vllm
+
+networks:
+  robot_dds:
+    driver: bridge
+
+volumes:
+  ollama_data:
+  hf_cache:

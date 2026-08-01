@@ -16,6 +16,7 @@ docker buildx build -f docker/integrated/Dockerfile --build-context stonefish=./
 - 베이스: `osrf/ros:jazzy-desktop-full`. `colcon build`에 **`--symlink-install` 없음** (`stonefish_ros2/data/` 대용량 설치 이슈 회피).
 - upstream Stonefish **`Tests/` 콘솔 실행 파일**(ConsoleTest 등)은 이 Dockerfile에서 빌드하지 않습니다.
 - 통합 이미지에 **CycloneDDS RMW** 패키지(`ros-jazzy-rmw-cyclonedds-cpp`)가 포함되어 있으면 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` 로 다른 컨테이너와 맞출 수 있습니다.
+- GUI/OpenGL 점검용으로 **`mesa-utils`**(예: `glxinfo`)와 **`xauth`** 가 포함되어 있습니다. XRDP·X11 쿠키를 넘기는 V100 compose에서 사용합니다.
 
 ## 통합 이미지 실행 방법 (`docker run`)
 
@@ -503,6 +504,50 @@ curl -s http://127.0.0.1:8080/control/high_level \
 
 `depends_on`은 vLLM 컨테이너의 시작 순서만 보장하고, 모델 로딩 완료까지 보장하지 않습니다. vLLM은 모델 가중치를 로드하는 데 시간이 걸릴 수 있으므로, `/v1/models`가 응답한 뒤 `llm-control` 제어 요청을 보내는 것이 안전합니다.
 
+### V100 듀얼 GPU (`docker-compose.v100.yml`)
+
+Tesla V100이 **2장**인 호스트(예: XRDP `DISPLAY=:10`)에서는 [`docker-compose.v100.yml`](docker-compose.v100.yml)을 사용합니다. `compose.llm.yaml`과 달리 GPU를 서비스별로 고정합니다.
+
+| 서비스 | GPU (`device_ids`) | 비고 |
+|--------|-------------------|------|
+| `vllm` | `"0"` | `--dtype half` (V100은 bfloat16 미지원) |
+| `ollama` | `"0"` | `profiles: [ollama]` — 기본 up에 포함되지 않음 |
+| `stonefish` | `"1"` | NVIDIA PRIME Render Offload + `XAUTHORITY` |
+| `llm-control` | (없음) | `HF_API_BASE=http://vllm:8000/v1` 전제 |
+
+`compose.llm.yaml`과의 주요 차이:
+
+- GPU를 `count: 1`이 아니라 **`device_ids`** 로 물리 카드에 고정합니다.
+- `stonefish`는 `__NV_PRIME_RENDER_OFFLOAD=1`, `__GLX_VENDOR_LIBRARY_NAME=nvidia` 와 `/tmp/.docker.xauth` 마운트를 사용합니다.
+- `DISPLAY`는 필수입니다 (`${DISPLAY:?…}`). XRDP면 보통 `export DISPLAY=:10`.
+- `ollama`는 profile이라 vLLM 구성에서는 뜨지 않습니다. 필요 시 `--profile ollama`를 추가합니다.
+
+호스트에서 X11 쿠키 파일을 준비한 뒤 실행합니다.
+
+```bash
+# XRDP 등 원격 세션 예
+export DISPLAY="${DISPLAY:-:10}"
+
+# 컨테이너용 xauth 쿠키 (통합 이미지의 xauth와 맞춤)
+touch /tmp/.docker.xauth
+xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f /tmp/.docker.xauth nmerge -
+
+# llm-settings.env 는 HF/vLLM 기준 (샘플의 LLM_* 튜닝값 포함)
+# LLM_PROVIDER=huggingface
+# HF_API_BASE=http://vllm:8000/v1
+# HUGGINGFACE_MODEL=LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+
+docker compose -f docker/docker-compose.v100.yml up --build vllm stonefish llm-control
+```
+
+Ollama까지 쓰려면:
+
+```bash
+docker compose -f docker/docker-compose.v100.yml --profile ollama up --build
+```
+
+기동 확인은 `compose.llm.yaml`과 동일합니다 (`curl http://127.0.0.1:8000/v1/models`, `curl http://127.0.0.1:8080/health`).
+
 ### TGI 등 다른 로컬 추론 서버
 
 [Text Generation Inference](https://github.com/huggingface/text-generation-inference), LM Studio, llama.cpp server 등 OpenAI 호환 `/v1/chat/completions`를 제공하는 서버도 같은 방식으로 붙일 수 있습니다.
@@ -538,6 +583,14 @@ HUGGINGFACE_MODEL=<서버가 요구하는 model 문자열>
 
 따라서 `docker/llm-settings.env`에 `LLM_PROVIDER`, `HF_API_BASE`, `HUGGINGFACE_MODEL` 등이 살아 있으면 JSON의 `model.provider`, `model.huggingface_api_base`, `model.huggingface_model`보다 우선 적용됩니다.
 
+샘플([`llm-settings.env.sample`](llm-settings.env.sample))에는 추론 튜닝 키도 포함되어 있습니다.
+
+| 변수 | 샘플 기본값 | 의미 |
+|------|------------|------|
+| `LLM_TEMPERATURE` | `0.0` | 샘플링 온도 |
+| `LLM_MAX_TOKENS` | `64` | 응답 최대 토큰 |
+| `LLM_HTTP_TIMEOUT` | `120` | 백엔드 HTTP 타임아웃(초) |
+
 JSON만 쓰고 싶다면 해당 키를 `docker/llm-settings.env`에서 주석 처리합니다.
 
 비밀 토큰은 JSON이나 커밋되는 env 파일에 넣지 말고, 호스트 환경 변수로만 전달합니다.
@@ -552,7 +605,10 @@ export HF_TOKEN="hf_xxxxxxxx"
 |------|------|
 | GPU | `compose.llm.yaml`에 `ollama`·`stonefish`용 NVIDIA `deploy` 기본 포함. compose 내부 vLLM을 쓰면 `vllm` 서비스에도 GPU 설정이 필요합니다. **GPU 없으면** 해당 `deploy` 블록을 주석 처리합니다. |
 | V100 GPU | V100(sm70)에서는 `bfloat16`을 사용할 수 없으므로 `--dtype half`를 사용합니다. `vllm/vllm-openai:latest`가 동작하지 않으면 `vllm/vllm-openai:v0.6.6.post1`을 사용합니다. |
-| 화면 | `DISPLAY` + `/tmp/.X11-unix` 기본 마운트. |
+| V100 듀얼 GPU | [`docker-compose.v100.yml`](docker-compose.v100.yml): vLLM/Ollama → GPU 0, Stonefish → GPU 1. XRDP·`/tmp/.docker.xauth`·PRIME offload. |
+| 화면 | `DISPLAY` + `/tmp/.X11-unix` 기본 마운트. V100 compose는 `XAUTHORITY=/tmp/.docker.xauth` 추가. |
+| 통합 이미지 GUI | `mesa-utils`, `xauth` 포함 (`glxinfo` 등으로 OpenGL 확인 가능). |
+| LLM 튜닝 | `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `LLM_HTTP_TIMEOUT` (`llm-settings.env.sample` 참고). |
 | `controller/set` WARN | `mvp_sim_only`는 `mvp_control` 없음 → `mvp_helm` 경고는 **cmd_vel 추력 경로와 무관**하게 나올 수 있음. |
 | LLM 백엔드 | **`ollama`** 또는 **`huggingface`**. HF는 `HF_API_BASE` + `HUGGINGFACE_MODEL`로 `POST .../v1/chat/completions` 한 경로만 사용합니다. |
 | HF 원격 라우터 | `HF_API_BASE=https://router.huggingface.co/v1`, `HF_TOKEN` 필요. |

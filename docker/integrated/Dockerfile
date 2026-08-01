@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6-dev \
     libgl1-mesa-dev \
     libomp-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* 
 
 RUN for f in /usr/lib/*/cmake/SDL2/sdl2-config.cmake; do \
         if [ -f "$f" ]; then sed -i 's/-lSDL2 /-lSDL2/g' "$f"; fi; \
@@ -80,6 +80,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-robot-localization \
     ros-jazzy-rmw-cyclonedds-cpp \
     xterm \
+    mesa-utils \
+    xauth \
     && rm -rf /var/lib/apt/lists/*
 
 ENV SDL_AUDIODRIVER=dummy
