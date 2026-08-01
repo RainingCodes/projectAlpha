@@ -1089,3 +1089,33 @@ vLLM 설정을 다음처럼 바꿉니다.
 - `COMMIT_CONVENTION.md`
 - `.dockerignore`
 - `docker/scripts/run-vllm-local.sh`
+
+---
+
+## 23. UMDL 데이터셋 및 플랫폼 독립형 임무 계획
+
+자연어를 직접 `Twist`로 변환하는 기존 `/control/high_level` 경로와 별도로 플랫폼 독립형 임무 계획 API가 추가되었습니다.
+
+```text
+POST /mission/plan
+→ UMDL JSON 생성
+→ JSON Schema 및 capability 규칙 검사
+→ ROS 명령 발행 없이 계획만 반환
+```
+
+데이터셋 파일과 구체적인 확인 명령은 [`UMDL_INTEGRATION.md`](UMDL_INTEGRATION.md)를 참고합니다.
+
+빠른 확인:
+
+```bash
+curl -s http://127.0.0.1:8080/umdl/health | python3 -m json.tool
+curl -s http://127.0.0.1:8080/dataset/stats | python3 -m json.tool
+curl -s 'http://127.0.0.1:8080/dataset/sample?split=test&index=0' | python3 -m json.tool
+```
+
+컨테이너 내부 검증:
+
+```bash
+docker compose -f docker/docker-compose.v100.yml exec llm-control \
+  python3 /app/scripts/validate_dataset.py --root /app/dataset
+```
