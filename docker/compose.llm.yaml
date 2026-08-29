@@ -1,53 +1,62 @@
 services:
+  # Generic configurable dual-GPU layout. Defaults match the V100 host: LLM=0, Stonefish=1.
   vllm:
     image: vllm/vllm-openai:v0.6.6.post1
     container_name: vllm
     hostname: vllm
     networks: [robot_dds]
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     ipc: host
     volumes:
       - hf_cache:/root/.cache/huggingface
     environment:
-      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_VISIBLE_DEVICES: ${VLLM_GPU_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
     command:
       - --model
-      - LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+      - ${VLLM_MODEL:-LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct}
       - --dtype
-      - half
+      - ${VLLM_DTYPE:-half}
       - --trust-remote-code
       - --host
       - 0.0.0.0
       - --port
       - "8000"
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ["${VLLM_GPU_ID:-0}"]
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/models', timeout=5)\""]
+      interval: 10s
+      timeout: 6s
+      retries: 60
+      start_period: 20s
 
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     hostname: ollama
+    profiles: [ollama]
     networks: [robot_dds]
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_VISIBLE_DEVICES: ${OLLAMA_GPU_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ["${OLLAMA_GPU_ID:-0}"]
               capabilities: [gpu]
 
   stonefish:
@@ -61,10 +70,10 @@ services:
       XDG_RUNTIME_DIR: /tmp/xdg-stonefish
       DISPLAY: ${DISPLAY:-:0}
       LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: all
+      NVIDIA_VISIBLE_DEVICES: ${STONEFISH_GPU_ID:-1}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./stonefish-llm-stack.sh:/stonefish-llm-stack.sh:ro
     stdin_open: true
     tty: true
@@ -73,7 +82,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              device_ids: ["${STONEFISH_GPU_ID:-1}"]
               capabilities: [gpu]
     command: ["/bin/bash", "/stonefish-llm-stack.sh"]
 
@@ -94,12 +103,14 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
-    ports:
-      - "8080:8080"
+      HUGGINGFACE_MODEL: ${VLLM_MODEL:-LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct}
+      NVIDIA_VISIBLE_DEVICES: void
+    ports: ["8080:8080"]
+    volumes:
+      - ./results:/app/results
     depends_on:
-      - stonefish
-      - vllm
-      # - ollama   # HF/vLLM 쓸 때는 굳이 필요 없음
+      vllm:
+        condition: service_healthy
 
 networks:
   robot_dds:

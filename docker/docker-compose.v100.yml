@@ -1,32 +1,26 @@
 services:
   # ============================================================
-  # vLLM
-  # 물리 GPU 0번 Tesla V100 사용
+  # Phase 1 / Phase 2 common vLLM service
+  # Physical GPU 0 by default. This is the fair-latency benchmark path.
   # ============================================================
   vllm:
     image: vllm/vllm-openai:v0.6.6.post1
     container_name: vllm
     hostname: vllm
-
-    networks:
-      - robot_dds
-
+    networks: [robot_dds]
     ports:
       - "8000:8000"
-
     ipc: host
-
     volumes:
       - hf_cache:/root/.cache/huggingface
-
     environment:
+      NVIDIA_VISIBLE_DEVICES: ${VLLM_GPU_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
-
     command:
       - --model
-      - LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+      - ${VLLM_MODEL:-LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct}
       - --dtype
       - half
       - --trust-remote-code
@@ -34,131 +28,209 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
-
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-4096}
+      - --max-num-seqs
+      - ${VLLM_MAX_NUM_SEQS:-16}
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids:
-                - "0"
-              capabilities:
-                - gpu
+              device_ids: ["${VLLM_GPU_ID:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 60
+      start_period: 60s
 
   # ============================================================
-  # Ollama
-  # 필요할 때만 profile로 실행
-  # 물리 GPU 0번 Tesla V100 사용
+  # Phase 1 optional dual-GPU throughput mode.
+  # GPU 1 is used for a second LLM only while Stonefish is OFF.
+  # IMPORTANT: do not combine profile benchmark-dual with simulation.
   # ============================================================
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    hostname: ollama
-
-    profiles:
-      - ollama
-
-    networks:
-      - robot_dds
-
+  vllm-secondary:
+    image: vllm/vllm-openai:v0.6.6.post1
+    container_name: vllm-secondary
+    hostname: vllm-secondary
+    profiles: [benchmark-dual]
+    networks: [robot_dds]
+    ports:
+      - "8001:8000"
+    ipc: host
     volumes:
-      - ollama_data:/root/.ollama
-
+      - hf_cache:/root/.cache/huggingface
     environment:
+      NVIDIA_VISIBLE_DEVICES: ${VLLM_GPU_ID_B:-1}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
+    command:
+      - --model
+      - ${VLLM_MODEL_B:-Qwen/Qwen2.5-3B-Instruct}
+      - --dtype
+      - half
+      - --trust-remote-code
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION_B:-0.90}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-4096}
+      - --max-num-seqs
+      - ${VLLM_MAX_NUM_SEQS:-16}
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids:
-                - "0"
-              capabilities:
-                - gpu
+              device_ids: ["${VLLM_GPU_ID_B:-1}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 60
+      start_period: 60s
 
   # ============================================================
-  # Stonefish
-  # 물리 GPU 1번 Tesla V100 사용
-  # XRDP DISPLAY :10 + NVIDIA PRIME Render Offload
-  # ============================================================
-  stonefish:
-    image: projectalpha:jazzy-integrated
-    container_name: stonefish
-    hostname: stonefish
-
-    networks:
-      - robot_dds
-
-    environment:
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
-
-      DISPLAY: ${DISPLAY:?DISPLAY가 설정되지 않았습니다}
-      XAUTHORITY: /tmp/.docker.xauth
-      XDG_RUNTIME_DIR: /tmp/xdg-stonefish
-
-      __NV_PRIME_RENDER_OFFLOAD: "1"
-      __GLX_VENDOR_LIBRARY_NAME: "nvidia"
-
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
-
-      QT_X11_NO_MITSHM: "1"
-      SDL_VIDEODRIVER: x11
-
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - /tmp/.docker.xauth:/tmp/.docker.xauth:ro
-      - ./stonefish-llm-stack.sh:/stonefish-llm-stack.sh:ro
-
-    stdin_open: true
-    tty: true
-
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids:
-                - "1"
-              capabilities:
-                - gpu
-
-    command: ["/bin/bash", "/stonefish-llm-stack.sh"]
-
-  # ============================================================
-  # LLM Control
+  # Primary CPU-only control/evaluation API. Stonefish is NOT a dependency.
+  # Default `docker compose up` therefore starts only vLLM + llm-control.
   # ============================================================
   llm-control:
     build:
       context: ./llm-control
       dockerfile: Dockerfile
-
     image: projectalpha:llm-control
     container_name: llm-control
     hostname: llm-control
-
-    networks:
-      - robot_dds
-
+    networks: [robot_dds]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     env_file:
       - llm-settings.env
-
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGINGFACE_HUB_TOKEN: ${HUGGINGFACE_HUB_TOKEN:-}
-
+      HF_API_BASE: http://vllm:8000/v1
+      HUGGINGFACE_MODEL: ${VLLM_MODEL:-LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct}
+      NVIDIA_VISIBLE_DEVICES: void
     ports:
       - "8080:8080"
-
+    volumes:
+      - ./results:/app/results
     depends_on:
-      - stonefish
-      - vllm
+      vllm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/umdl/health', timeout=5)\""]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 10s
+
+  # ============================================================
+  # Secondary CPU-only evaluator for dual-GPU Phase 1 runs.
+  # It points to vllm-secondary and writes into the same results volume.
+  # ============================================================
+  llm-control-secondary:
+    build:
+      context: ./llm-control
+      dockerfile: Dockerfile
+    image: projectalpha:llm-control
+    container_name: llm-control-secondary
+    hostname: llm-control-secondary
+    profiles: [benchmark-dual]
+    networks: [robot_dds]
+    env_file:
+      - llm-settings.env
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      HF_API_BASE: http://vllm-secondary:8000/v1
+      HUGGINGFACE_MODEL: ${VLLM_MODEL_B:-Qwen/Qwen2.5-3B-Instruct}
+      NVIDIA_VISIBLE_DEVICES: void
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./results:/app/results
+    depends_on:
+      vllm-secondary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/umdl/health', timeout=5)\""]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 10s
+
+  # ============================================================
+  # Phase 2 simulation profile.
+  # GPU 1 is dedicated to Stonefish OpenGL/FLS while vLLM stays on GPU 0.
+  # `profiles: [simulation]` prevents accidental startup during Phase 1.
+  # ============================================================
+  stonefish:
+    image: projectalpha:jazzy-integrated
+    container_name: stonefish
+    hostname: stonefish
+    profiles: [simulation]
+    networks: [robot_dds]
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      DISPLAY: ${DISPLAY:-:10}
+      XAUTHORITY: /tmp/.docker.xauth
+      XDG_RUNTIME_DIR: /tmp/xdg-stonefish
+      __NV_PRIME_RENDER_OFFLOAD: "1"
+      __GLX_VENDOR_LIBRARY_NAME: nvidia
+      NVIDIA_VISIBLE_DEVICES: ${STONEFISH_GPU_ID:-1}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+      QT_X11_NO_MITSHM: "1"
+      SDL_VIDEODRIVER: x11
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:ro
+      - ./stonefish-llm-stack.sh:/stonefish-llm-stack.sh:ro
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${STONEFISH_GPU_ID:-1}"]
+              capabilities: [gpu]
+    command: ["/bin/bash", "/stonefish-llm-stack.sh"]
+
+  # ============================================================
+  # Optional Ollama profile. Kept separate from benchmark/simulation paths.
+  # ============================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    hostname: ollama
+    profiles: [ollama]
+    networks: [robot_dds]
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${OLLAMA_GPU_ID:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${OLLAMA_GPU_ID:-0}"]
+              capabilities: [gpu]
 
 networks:
   robot_dds:
