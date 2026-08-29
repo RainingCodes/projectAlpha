@@ -1,5 +1,31 @@
 # Docker
 
+> **2026-08-21 staged UMDL validation v0.3**
+>
+> 실행 순서를 `Stonefish 없이 LLM↔Dataset 검증 → Stonefish 추가 공존 검증`으로 분리했습니다. 기본 Compose는 `vLLM(GPU 0) + llm-control(CPU)`만 시작하고, Stonefish는 `simulation` profile에서만 GPU 1을 사용합니다. GPU 1은 Phase 1에서 선택적으로 두 번째 vLLM에 사용할 수 있습니다.
+>
+> 가장 먼저 `STAGED_VALIDATION.md`와 `UMDL_BENCHMARK.md`를 보세요.
+
+### 가장 짧은 실행
+
+```bash
+cd ~/projectAlpha/docker
+cp .env.sample .env
+./scripts/phase1-offline-check.sh
+LIMIT=6 ./scripts/run-umdl-benchmark.sh LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+export DISPLAY=:10
+./scripts/phase2-stonefish-smoke.sh LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+```
+
+또는 한 번에:
+
+```bash
+export DISPLAY=:10
+PHASE1_LIMIT=6 ./scripts/run-staged-validation.sh LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+```
+
+---
+
 ROS 2 Jazzy 기반으로 Stonefish, `stonefish_ros2`, MVP, EROAS 및 LLM 제어 스택을 실행하기 위한 Docker 구성입니다.
 
 Stonefish 원본 소스는 저장소의 `stonefish/` 서브모듈을 일반 빌드 컨텍스트와 분리된 **추가 빌드 컨텍스트**로 전달합니다.

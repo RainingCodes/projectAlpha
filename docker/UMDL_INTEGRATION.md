@@ -44,8 +44,9 @@ UMDL
 ```text
 docker/llm-control/
 ├── app/
-│   ├── main.py                 # 기존 API + UMDL router 등록
-│   └── umdl_router.py          # /mission/plan, /dataset/*
+│   ├── main.py                 # API + UMDL router 등록; legacy direct control 기본 비활성
+│   ├── umdl_router.py          # /mission/plan, /dataset/*
+│   └── umdl_codec.py           # Compact IR v0.2 <-> Full UMDL deterministic codec
 ├── config/
 │   ├── dataset_settings.json
 │   ├── generation_settings.json
@@ -58,11 +59,10 @@ docker/llm-control/
 │   │   ├── train.jsonl
 │   │   ├── validation.jsonl
 │   │   └── test.jsonl
-│   ├── chat/
-│   │   ├── train.jsonl
-│   │   ├── validation.jsonl
-│   │   └── test.jsonl
+│   ├── chat/                   # 기존 Full UMDL target 보관
+│   ├── chat_compact/           # 현재 SFT/runtime target (Compact IR v0.2)
 │   ├── schema/umdl-0.1.schema.json
+│   ├── schema/umdl-generation-0.2.schema.json
 │   └── manifests/
 ├── scripts/
 │   ├── make_seed_dataset.py
@@ -261,7 +261,7 @@ execution.ros_command_published=false
 
 ## 8. 기존 `/control/high_level`과의 관계
 
-기존 endpoint는 그대로 남아 있다.
+기존 endpoint 코드는 남아 있지만 **기본값으로 비활성화**되어 있다 (`LEGACY_DIRECT_CONTROL_ENABLED=0`).
 
 ```bash
 curl -s http://127.0.0.1:8080/control/high_level \
@@ -269,7 +269,7 @@ curl -s http://127.0.0.1:8080/control/high_level \
   -d '{"instruction":"천천히 전진"}'
 ```
 
-이 endpoint는 실제 `/GIRONA500/cmd_vel`을 발행한다. 데이터셋과 UMDL 구조를 확인할 때는 `/mission/plan`을 사용해야 한다.
+`LEGACY_DIRECT_CONTROL_ENABLED=1`로 명시적으로 켠 경우에만 이 endpoint가 `/GIRONA500/cmd_vel`을 발행한다. 데이터셋/LLM benchmark에서는 `/mission/plan`만 사용한다.
 
 권장 최종 구조는 다음과 같다.
 
@@ -289,7 +289,7 @@ curl -s http://127.0.0.1:8080/control/high_level \
 
 ## 9. 학습 파일 확인
 
-SFT 입력은 `dataset/chat/*.jsonl`이다. 각 행은 다음 형식이다.
+현재 SFT 입력은 **`dataset/chat_compact/*.jsonl`**이다. `dataset/chat/*.jsonl`은 기존 Full UMDL target 참고용으로 남겨 둔다. 각 행은 다음 형식이다.
 
 ```json
 {
@@ -340,3 +340,21 @@ python3 docker/llm-control/scripts/evaluate_predictions.py \
 5. UMDL task를 waypoint/depth/heading reference로 변환
 6. Stonefish rollout으로 completion, collision, CTE, energy 기록
 7. 정적 자연어–UMDL 데이터와 동적 상태–replan 데이터를 분리해 평가
+
+
+## 11. 현재 권장 benchmark
+
+상세 절차는 `UMDL_BENCHMARK.md`를 사용한다. V100 기본 GPU 배치는 `vLLM=GPU 0`, `Stonefish=GPU 1`, `llm-control=GPU 없음`이다. 모델 하나는 다음 명령으로 같은 test split에 평가한다.
+
+```bash
+cd docker
+./scripts/run-umdl-benchmark.sh LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
+```
+
+여러 모델은:
+
+```bash
+./scripts/run-benchmark-matrix.sh MODEL_A MODEL_B MODEL_C
+```
+
+benchmark script는 `force_llm=true`를 사용하므로 obstacle Safety Fast Path를 점수에 섞지 않는다.
