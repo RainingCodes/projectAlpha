@@ -5,14 +5,23 @@
     "ollama_model": "medgemma:4b",
     "huggingface_api_base": "http://vllm:8000/v1",
     "huggingface_model": "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
-    "temperature": 0.2
+    "temperature": 0.0
   },
+
   "LLM_DUMMY": false,
   "ODOM_TOPIC": "/GIRONA500/dynamics",
   "CMD_VEL_TOPIC": "/GIRONA500/cmd_vel",
   "LLM_CONTROL_PORT": 8080,
+
   "UMDL_MAX_TOKENS": 512,
   "UMDL_DATASET_ROOT": "/app/dataset",
   "UMDL_SCHEMA_PATH": "/app/dataset/schema/umdl-0.1.schema.json",
-  "UMDL_GENERATION_SCHEMA_PATH": "/app/dataset/schema/umdl-generation-0.1.schema.json"
+  "UMDL_GENERATION_SCHEMA_PATH": "/app/dataset/schema/umdl-generation-0.2.schema.json",
+
+  "UMDL_GUIDED_JSON": false,
+  "UMDL_FEW_SHOT": false,
+  "UMDL_FAMILY_HINTS": false,
+  "UMDL_SAFETY_FAST_PATH": true,
+
+  "LEGACY_DIRECT_CONTROL_ENABLED": false
 }

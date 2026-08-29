@@ -8,12 +8,30 @@
   "samples_per_group": 6,
   "expected_sample_count": 720,
   "languages_and_styles": [
-    {"language": "ko", "style": "KO_STANDARD"},
-    {"language": "ko", "style": "KO_SHORT"},
-    {"language": "ko", "style": "KO_FIELD"},
-    {"language": "ko", "style": "KO_POLITE"},
-    {"language": "en", "style": "EN_STANDARD"},
-    {"language": "mixed", "style": "KO_EN_MIXED"}
+    {
+      "language": "ko",
+      "style": "KO_STANDARD"
+    },
+    {
+      "language": "ko",
+      "style": "KO_SHORT"
+    },
+    {
+      "language": "ko",
+      "style": "KO_FIELD"
+    },
+    {
+      "language": "ko",
+      "style": "KO_POLITE"
+    },
+    {
+      "language": "en",
+      "style": "EN_STANDARD"
+    },
+    {
+      "language": "mixed",
+      "style": "KO_EN_MIXED"
+    }
   ],
   "split": {
     "unit": "group_id",
@@ -29,7 +47,8 @@
     "cross_split_group_overlap_max": 0,
     "target_hash_mismatch_within_group_max": 0,
     "empty_command_count_max": 0,
-    "human_review_required_for_final_test_set": true
+    "human_review_required_for_final_test_set": true,
+    "compact_roundtrip_exact_rate_min": 1.0
   },
   "scope": {
     "included": [
@@ -50,5 +69,12 @@
       "thruster-level control",
       "Stonefish adaptive-heading rollout labels"
     ]
+  },
+  "generation_ir_version": "umdl-generation/0.2",
+  "sft_target": "Compact UMDL IR v0.2",
+  "sft_files": {
+    "train": "/app/dataset/chat_compact/train.jsonl",
+    "validation": "/app/dataset/chat_compact/validation.jsonl",
+    "test": "/app/dataset/chat_compact/test.jsonl"
   }
 }

@@ -20,6 +20,8 @@ from fastapi import APIRouter, HTTPException, Query
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.umdl_codec import COMPACT_SYSTEM_PROMPT, compact_from_full, compile_umdl
+
 LOG = logging.getLogger("llm_control.umdl")
 
 
@@ -46,26 +48,14 @@ class UMDLSettings(BaseModel):
     timeout_seconds: float = 120.0
     dataset_root: str = "/app/dataset"
     schema_path: str = "/app/dataset/schema/umdl-0.1.schema.json"
-    generation_schema_path: str = "/app/dataset/schema/umdl-generation-0.1.schema.json"
-    guided_json: bool = True
+    generation_schema_path: str = "/app/dataset/schema/umdl-generation-0.2.schema.json"
+    guided_json: bool = False
     guided_decoding_backend: str = "outlines"
-    few_shot_enabled: bool = True
+    few_shot_enabled: bool = False
+    family_hints_enabled: bool = False
     max_retries: int = 0
     safety_fast_path: bool = True
 
-
-FAMILY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("obstacle", ("장애물", "회피", "충돌", "obstacle", "avoid")),
-    ("return", ("귀환", "배터리", "복귀", "return", "battery")),
-    ("pipeline", ("파이프라인", "배관", "누수", "pipeline", "leak")),
-    ("sar", ("요구조", "구조", "침몰선", "생존자", "rescue", "survivor")),
-    ("station", ("위치 유지", "정지", "호버", "hold position", "station keeping")),
-    ("area_survey", ("구역", "영역", "전역", "survey", "lawnmower")),
-    ("target_search", ("찾아", "탐색", "수색", "search")),
-    ("target_inspection", ("점검", "검사", "inspect")),
-    ("environment", ("환경", "수질", "샘플", "monitor", "sample")),
-    ("navigation", ("이동", "항해", "웨이포인트", "navigate", "waypoint")),
-)
 
 FAMILY_HINTS: dict[str, dict[str, str]] = {
     "obstacle": {
@@ -159,7 +149,9 @@ def _deterministic_ir_for_request(req: MissionPlanRequest) -> dict[str, Any] | N
                 "type": "AVOID_OBSTACLE",
                 "target_type": "DETECTED_OBSTACLE",
                 "target_reference": obstacle_ref,
-                "pattern": "NONE",
+                "pattern_type": "NONE",
+                "pattern_parameters": {},
+                "parameters": {},
                 "completion_condition": "SAFE_CLEARANCE_ESTABLISHED",
                 "report_type": "NONE",
             },
@@ -167,7 +159,9 @@ def _deterministic_ir_for_request(req: MissionPlanRequest) -> dict[str, Any] | N
                 "type": "HOLD_POSITION",
                 "target_type": "CURRENT_POSITION",
                 "target_reference": "POST_AVOIDANCE_POSITION",
-                "pattern": "NONE",
+                "pattern_type": "NONE",
+                "pattern_parameters": {},
+                "parameters": {},
                 "completion_condition": "LOCAL_SAFETY_CONFIRMED",
                 "report_type": "NONE",
             },
@@ -175,11 +169,15 @@ def _deterministic_ir_for_request(req: MissionPlanRequest) -> dict[str, Any] | N
                 "type": "REPORT",
                 "target_type": "NONE",
                 "target_reference": "NONE",
-                "pattern": "NONE",
+                "pattern_type": "NONE",
+                "pattern_parameters": {},
+                "parameters": {},
                 "completion_condition": "REPORT_STORED",
                 "report_type": "AVOIDANCE_RESULT",
             },
         ],
+        "constraints_policy": "PLATFORM_DEFAULT",
+        "contingency_policy": "NONE",
         "requires_clarification": False,
         "missing_fields": [],
         "safe_fallback": "STOP_AND_HOLD",
@@ -207,28 +205,167 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _infer_family(instruction: str) -> str | None:
-    lowered = instruction.lower()
-    for family, keywords in FAMILY_KEYWORDS:
-        if any(keyword.lower() in lowered for keyword in keywords):
-            return family
+    """Best-effort family hint for retrieval and emergency routing only.
+
+    Benchmark generation does not use this hint unless UMDL_FAMILY_HINTS=1.
+    Rules are ordered from safety/specific mission phrases to generic verbs so
+    words such as "inspection" do not override "pipeline".
+    """
+    text = instruction.lower()
+
+    def has(*terms: str) -> bool:
+        return any(term.lower() in text for term in terms)
+
+    if has("장애물", "회피", "충돌", "obstacle", "avoid", "clearance"):
+        return "obstacle"
+    if has("귀환", "복귀", "return home", "return-to-home"):
+        return "return"
+    if has("파이프라인", "pipeline", " 라인 ", "누수 흔적", "부식 흔적", "라인 쭉 따라"):
+        return "pipeline"
+    if has("요구조자", "생존자", "search-and-rescue", "rescue", "survivor", "sar search"):
+        return "sar"
+    if has(
+        "수온", "탁도", "염도", "염분", "용존 산소", "수압", "수중 소음", "유속", "산도",
+        "전도도", "형광", "water temperature", "turbidity", "salinity", "dissolved oxygen",
+        "water pressure", "underwater noise", "current speed", "conductivity", "fluorescence",
+        "sampling", "measure "
+    ):
+        return "environment"
+    if has("station keep", "station keeping", "hold the current position", "버티고") or (
+        has("현재 위치") and has("유지")
+    ):
+        return "station"
+    if has(
+        "전수 조사", "전 구역", "빈 구역 없이", "lawnmower", "survey region", "survey 해",
+        "다각형 패턴", "다각형 경로", "나선형 패턴", "나선형 경로", "경계 추종 패턴", "경계 추종 경로",
+        "polygon pattern", "spiral pattern", "perimeter"
+    ) or (has("구역") and has("간격") and has("조사")):
+        return "area_survey"
+    if has("수색", "찾아", "탐지되면", "좌표 남겨", "target search", "search region", "detected location"):
+        return "target_search"
+    if has("정밀 점검", "가까이서 확인", "손상 있으면", "close inspection", "inspect the", "inspection", "anomaly"):
+        return "target_inspection"
+    if has("이동", "방위", "미터 전진", "navigate", "bearing", "meters on bearing"):
+        return "navigation"
     return None
 
 
-def _select_few_shot(dataset_root: Path, instruction: str) -> dict[str, Any] | None:
+def _select_few_shot(
+    dataset_root: Path,
+    instruction: str,
+) -> dict[str, Any] | None:
+    """Select one same-family Compact IR v0.2 few-shot example."""
+
     family = _infer_family(instruction)
     if family is None:
         return None
-    train_path = dataset_root / "raw" / "train.jsonl"
-    if not train_path.exists():
+
+    raw_path = dataset_root / "raw" / "train.jsonl"
+    compact_path = dataset_root / "chat_compact" / "train.jsonl"
+
+    if not raw_path.exists() or not compact_path.exists():
         return None
+
     try:
-        rows = _load_jsonl(train_path)
+        raw_rows = _load_jsonl(raw_path)
+        compact_rows = _load_jsonl(compact_path)
     except HTTPException:
         return None
-    for row in rows:
-        if row.get("metadata", {}).get("canonical_family") == family:
-            return row
+
+    # raw dataset에는 canonical_family metadata가 있으므로
+    # 여기서 같은 family의 대표 sample ID를 선택한다.
+    selected_id: str | None = None
+
+    for row in raw_rows:
+        if (
+            row.get("metadata", {}).get("canonical_family")
+            == family
+        ):
+            selected_id = row.get("id")
+            break
+
+    if not selected_id:
+        return None
+
+    # 같은 ID의 Compact IR training example을 찾는다.
+    for row in compact_rows:
+        if row.get("id") == selected_id:
+            return {
+                "id": selected_id,
+                "family": family,
+                "messages": row.get("messages", []),
+            }
+
     return None
+
+def _few_shot_messages(
+    example: dict[str, Any],
+    family_hints_enabled: bool = False,
+) -> list[dict[str, str]]:
+    """Build one user/assistant Compact IR v0.2 few-shot pair."""
+
+    messages = example.get("messages", [])
+
+    if not isinstance(messages, list):
+        return []
+
+    result: list[dict[str, str]] = []
+
+    family = example.get("family")
+    planner_hint = (
+        FAMILY_HINTS.get(family)
+        if family_hints_enabled and family
+        else None
+    )
+
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+
+        role = message.get("role")
+        content = message.get("content")
+
+        # Runtime에는 이미 현재 _system_prompt()가 있으므로
+        # dataset의 system message를 다시 넣지 않는다.
+        if role not in {"user", "assistant"}:
+            continue
+
+        if not isinstance(content, str):
+            continue
+
+        # Family hint 실험이 켜진 경우
+        # few-shot user payload에도 동일 조건을 적용한다.
+        if role == "user" and planner_hint:
+            try:
+                payload = json.loads(content)
+
+                if isinstance(payload, dict):
+                    payload["planner_hint"] = planner_hint
+
+                    content = json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+            except json.JSONDecodeError:
+                # Dataset 검증에서 JSON이어야 하지만
+                # runtime에서는 안전하게 원본을 유지한다.
+                pass
+
+        result.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
+
+    # 정상적인 few-shot은 user + assistant 한 쌍이어야 한다.
+    roles = [m["role"] for m in result]
+
+    if roles != ["user", "assistant"]:
+        return []
+
+    return result
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -264,123 +401,15 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 
 def _system_prompt() -> str:
-    return (
-        "You are a platform-independent underwater mission planner. "
-        "Return exactly one compact planner JSON object matching the supplied schema. "
-        "Do not output schema_version, mission_id, constraints, contingencies, ROS topics, "
-        "velocity, thruster, PWM, RPM, or controller gains. "
-        "Use only capabilities present in available_capabilities. "
-        "Use symbolic UPPER_SNAKE_CASE references. "
-        "For unused task fields output NONE. "
-        "For EXECUTE, requires_clarification must be false, missing_fields must be empty, "
-        "and reason_code must be NONE. "
-        "For REQUEST_CLARIFICATION, REJECT, or UNSUPPORTED, tasks must be empty. "
-        "When planner_hint contains allowed_tasks or first_task, follow those constraints exactly. "
-        "Do not add sampling, inspection, depth-change, or navigation tasks unless the instruction requests them. "
-        "Follow planner_hint when one is supplied."
-    )
+    return COMPACT_SYSTEM_PROMPT
 
 
 def _compact_from_full(target: dict[str, Any]) -> dict[str, Any]:
-    compact_tasks: list[dict[str, Any]] = []
-    for task in target.get("tasks", []):
-        tgt = task.get("target") or {}
-        pattern = task.get("pattern") or {}
-        completion = task.get("completion") or {}
-        compact_tasks.append(
-            {
-                "type": task.get("type", "WAIT"),
-                "target_type": tgt.get("type", "NONE"),
-                "target_reference": tgt.get("reference", "NONE"),
-                "pattern": pattern.get("type", "NONE"),
-                "completion_condition": completion.get("condition", "NONE"),
-                "report_type": task.get("report_type", "NONE"),
-            }
-        )
-    requirements = target.get("requirements") or {}
-    return {
-        "intent": target.get("intent", "UNSPECIFIED"),
-        "priority": target.get("priority", "LOW"),
-        "decision": target.get("decision", "REQUEST_CLARIFICATION"),
-        "required_capabilities": requirements.get("required_capabilities", []),
-        "preferred_sensor_roles": requirements.get("preferred_sensor_roles", []),
-        "tasks": compact_tasks,
-        "requires_clarification": bool(target.get("requires_clarification", False)),
-        "missing_fields": target.get("missing_fields", []),
-        "safe_fallback": target.get("safe_fallback") or "NONE",
-        "reason_code": target.get("reason_code") or "NONE",
-    }
-
-
-def _few_shot_messages(example: dict[str, Any]) -> list[dict[str, str]]:
-    example_input = copy.deepcopy(example.get("input", {}))
-    compact_target = _compact_from_full(copy.deepcopy(example.get("target", {})))
-    family = example.get("metadata", {}).get("canonical_family")
-    user_payload = {
-        "instruction": example_input.get("command", ""),
-        "runtime_context": example_input.get("runtime_context", {}),
-        "available_capabilities": example_input.get("available_capabilities", []),
-        "planner_hint": FAMILY_HINTS.get(family),
-    }
-    return [
-        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
-        {"role": "assistant", "content": json.dumps(compact_target, ensure_ascii=False, separators=(",", ":"))},
-    ]
-
-
-def _clarification_question(missing_fields: list[str]) -> str:
-    if not missing_fields:
-        return "임무 수행에 필요한 정보를 추가로 지정해 주세요."
-    return "다음 정보를 지정해 주세요: " + ", ".join(missing_fields)
+    return compact_from_full(target)
 
 
 def _compile_umdl(ir: dict[str, Any], req: MissionPlanRequest) -> dict[str, Any]:
-    tasks: list[dict[str, Any]] = []
-    for index, item in enumerate(ir.get("tasks", []), 1):
-        task: dict[str, Any] = {"id": f"task_{index}", "type": item["type"]}
-        target_type = item.get("target_type", "NONE")
-        target_reference = item.get("target_reference", "NONE")
-        if target_type != "NONE" and target_reference != "NONE":
-            task["target"] = {"type": target_type, "reference": target_reference}
-        pattern = item.get("pattern", "NONE")
-        if pattern != "NONE":
-            task["pattern"] = {"type": pattern}
-        completion = item.get("completion_condition", "NONE")
-        if completion != "NONE":
-            task["completion"] = {"condition": completion}
-        report_type = item.get("report_type", "NONE")
-        if report_type != "NONE":
-            task["report_type"] = report_type
-        tasks.append(task)
-
-    safe_fallback = ir.get("safe_fallback", "NONE")
-    plan: dict[str, Any] = {
-        "schema_version": "umdl/0.1",
-        "mission_id": req.mission_id,
-        "intent": ir["intent"],
-        "priority": ir["priority"],
-        "decision": ir["decision"],
-        "requirements": {
-            "required_capabilities": ir.get("required_capabilities", []),
-            "preferred_sensor_roles": ir.get("preferred_sensor_roles", []),
-        },
-        "tasks": tasks,
-        "constraints": {
-            "collision_avoidance": {"enabled": True},
-            "depth": {"mode": "WITHIN_PLATFORM_LIMITS"},
-            "energy": {"reserve_policy": "PLATFORM_DEFAULT"},
-        },
-        "contingencies": [],
-        "requires_clarification": bool(ir.get("requires_clarification", False)),
-        "missing_fields": ir.get("missing_fields", []),
-        "safe_fallback": None if safe_fallback == "NONE" else safe_fallback,
-    }
-    if plan["decision"] == "REQUEST_CLARIFICATION":
-        plan["clarification_question"] = _clarification_question(plan["missing_fields"])
-    reason_code = ir.get("reason_code", "NONE")
-    if reason_code != "NONE":
-        plan["reason_code"] = reason_code
-    return plan
+    return compile_umdl(ir, req.mission_id)
 
 
 def _schema_errors(validator: Draft202012Validator, obj: dict[str, Any]) -> list[str]:
@@ -394,9 +423,12 @@ def _schema_errors(validator: Draft202012Validator, obj: dict[str, Any]) -> list
 def _generation_schema_for_request(
     base_schema: dict[str, Any],
     req: MissionPlanRequest,
+    family_hints_enabled: bool,
 ) -> dict[str, Any]:
-    """Narrow the guided schema for a recognized mission family."""
+    """Optionally narrow guided JSON using a best-effort family hint."""
     schema = copy.deepcopy(base_schema)
+    if not family_hints_enabled:
+        return schema
     family = _infer_family(req.instruction)
     hint = FAMILY_HINTS.get(family or "")
     policy = FAMILY_POLICIES.get(family or "")
@@ -427,8 +459,146 @@ def _generation_schema_for_request(
 
     return schema
 
+def _make_guided_schema(_: dict[str, Any]) -> dict[str, Any]:
+    """Lightweight structural schema for Outlines guided decoding.
 
-def _generation_rule_errors(ir: dict[str, Any], req: MissionPlanRequest) -> list[str]:
+    This schema only constrains the JSON structure.
+    The original Compact UMDL schema remains responsible for strict
+    semantic validation after generation.
+    """
+
+    return {
+        "type": "object",
+        "properties": {
+            "intent": {
+                "type": "string",
+            },
+            "priority": {
+                "type": "string",
+            },
+            "decision": {
+                "type": "string",
+                "enum": [
+                    "EXECUTE",
+                    "REQUEST_CLARIFICATION",
+                    "REJECT",
+                    "UNSUPPORTED",
+                ],
+            },
+
+            "required_capabilities": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+                "maxItems": 8,
+            },
+
+            "preferred_sensor_roles": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+                "maxItems": 4,
+            },
+
+            "tasks": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                        },
+                        "target_type": {
+                            "type": "string",
+                        },
+                        "target_reference": {
+                            "type": "string",
+                        },
+                        "pattern_type": {
+                            "type": "string",
+                        },
+
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False,
+                        },
+
+                        "pattern_parameters": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False,
+                        },
+
+                        "completion_condition": {
+                            "type": "string",
+                        },
+                        "report_type": {
+                            "type": "string",
+                        },
+                    },
+                    "required": [
+                        "type",
+                        "target_type",
+                        "target_reference",
+                        "pattern_type",
+                        "parameters",
+                        "pattern_parameters",
+                        "completion_condition",
+                        "report_type",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+
+            "constraints_policy": {
+                "type": "string",
+            },
+            "contingency_policy": {
+                "type": "string",
+            },
+            "requires_clarification": {
+                "type": "boolean",
+            },
+
+            "missing_fields": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+                "maxItems": 8,
+            },
+
+            "safe_fallback": {
+                "type": "string",
+            },
+            "reason_code": {
+                "type": "string",
+            },
+        },
+
+        "required": [
+            "intent",
+            "priority",
+            "decision",
+            "required_capabilities",
+            "preferred_sensor_roles",
+            "tasks",
+            "constraints_policy",
+            "contingency_policy",
+            "requires_clarification",
+            "missing_fields",
+            "safe_fallback",
+            "reason_code",
+        ],
+
+        "additionalProperties": False,
+    }
+
+def _generation_rule_errors(ir: dict[str, Any], req: MissionPlanRequest, family_hints_enabled: bool) -> list[str]:
     errors: list[str] = []
     decision = ir.get("decision")
     tasks = ir.get("tasks", [])
@@ -457,8 +627,6 @@ def _generation_rule_errors(ir: dict[str, Any], req: MissionPlanRequest) -> list
             errors.append("REQUEST_CLARIFICATION requires requires_clarification=true")
         if not missing_fields:
             errors.append("REQUEST_CLARIFICATION requires at least one missing field")
-        if reason_code not in {"MISSING_INFORMATION", "AMBIGUOUS_COMMAND"}:
-            errors.append("REQUEST_CLARIFICATION requires a clarification reason_code")
     elif decision in {"REJECT", "UNSUPPORTED"}:
         if tasks:
             errors.append(f"{decision} must have an empty tasks list")
@@ -469,7 +637,7 @@ def _generation_rule_errors(ir: dict[str, Any], req: MissionPlanRequest) -> list
     else:
         errors.append(f"unknown decision: {decision!r}")
 
-    family = _infer_family(req.instruction)
+    family = _infer_family(req.instruction) if family_hints_enabled else None
     hint = FAMILY_HINTS.get(family or "")
     policy = FAMILY_POLICIES.get(family or "")
     if hint and decision == "EXECUTE":
@@ -557,15 +725,16 @@ async def _call_model(
 
     messages: list[dict[str, str]] = [{"role": "system", "content": _system_prompt()}]
     if settings.few_shot_enabled and few_shot is not None:
-        messages.extend(_few_shot_messages(few_shot))
+        messages.extend(_few_shot_messages(few_shot, settings.family_hints_enabled))
 
-    family = _infer_family(req.instruction)
+    family = _infer_family(req.instruction) if settings.family_hints_enabled else None
     current_payload: dict[str, Any] = {
         "instruction": req.instruction,
         "runtime_context": req.runtime_context,
         "available_capabilities": req.available_capabilities,
-        "planner_hint": FAMILY_HINTS.get(family or ""),
     }
+    if family is not None:
+        current_payload["planner_hint"] = FAMILY_HINTS.get(family, {})
     if correction:
         current_payload["correction"] = correction
     messages.append({"role": "user", "content": json.dumps(current_payload, ensure_ascii=False, separators=(",", ":"))})
@@ -588,6 +757,10 @@ async def _call_model(
         if settings.guided_json:
             request_payload["guided_json"] = generation_schema
             request_payload["guided_decoding_backend"] = settings.guided_decoding_backend
+        else:
+            request_payload["response_format"] = {
+                "type": "json_object"
+            }
     elif provider == "ollama":
         url = f"{settings.ollama_host.rstrip('/')}/v1/chat/completions"
         headers = {"Authorization": "Bearer ollama"}
@@ -640,6 +813,29 @@ async def _call_model(
         "usage": body.get("usage"),
     }
 
+def _select_fixed_few_shot(
+    dataset_root: Path,
+    example_id: str = "nav_004_02",
+) -> dict[str, Any] | None:
+    compact_path = dataset_root / "chat_compact" / "train.jsonl"
+
+    if not compact_path.exists():
+        return None
+
+    try:
+        rows = _load_jsonl(compact_path)
+    except HTTPException:
+        return None
+
+    for row in rows:
+        if row.get("id") == example_id:
+            return {
+                "id": example_id,
+                "family": None,
+                "messages": row.get("messages", []),
+            }
+
+    return None
 
 def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
     settings = UMDLSettings(**settings_dict)
@@ -681,10 +877,11 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
             "guided_json": settings.guided_json,
             "guided_decoding_backend": settings.guided_decoding_backend,
             "few_shot_enabled": settings.few_shot_enabled,
+            "family_hints_enabled": settings.family_hints_enabled,
             "max_retries": settings.max_retries,
             "planner_timeout_seconds": settings.timeout_seconds,
             "safety_fast_path": settings.safety_fast_path,
-            "generation_mode": "compact_ir_then_compile",
+            "generation_mode": "compact_ir_v0.2_then_compile",
         }
 
     @router.get("/dataset/stats")
@@ -724,7 +921,7 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
             deterministic_ir = _deterministic_ir_for_request(req)
             if deterministic_ir is not None:
                 generation_schema_errors = _schema_errors(generation_validator, deterministic_ir)
-                generation_rule_errors = _generation_rule_errors(deterministic_ir, req)
+                generation_rule_errors = _generation_rule_errors(deterministic_ir, req, settings.family_hints_enabled)
                 deterministic_plan = _compile_umdl(deterministic_ir, req)
                 final_schema_errors = _schema_errors(full_validator, deterministic_plan)
                 final_rule_errors = _final_rule_errors(deterministic_plan, req.available_capabilities)
@@ -766,8 +963,20 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
                     },
                 }
 
-        few_shot = _select_few_shot(dataset_root, req.instruction) if settings.few_shot_enabled else None
-        request_generation_schema = _generation_schema_for_request(generation_schema, req)
+        few_shot = (
+            _select_fixed_few_shot(dataset_root)
+            if settings.few_shot_enabled
+            else None
+        )
+        request_generation_schema = _generation_schema_for_request(
+            generation_schema, req, settings.family_hints_enabled
+        )
+        request_generation_validator = Draft202012Validator(request_generation_schema)
+        guided_generation_schema = (
+            _make_guided_schema(request_generation_schema)
+            if settings.guided_json
+            else request_generation_schema
+        )
         attempts: list[dict[str, Any]] = []
         correction: str | None = None
         final_ir: dict[str, Any] | None = None
@@ -781,7 +990,7 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
                 content, model_meta = await _call_model(
                     settings,
                     req,
-                    request_generation_schema,
+                    guided_generation_schema,
                     few_shot=few_shot,
                     correction=correction,
                 )
@@ -818,8 +1027,8 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
                 )
                 continue
 
-            generation_schema_errors = _schema_errors(generation_validator, ir)
-            generation_rule_errors = _generation_rule_errors(ir, req)
+            generation_schema_errors = _schema_errors(request_generation_validator, ir)
+            generation_rule_errors = _generation_rule_errors(ir, req, settings.family_hints_enabled)
             attempt["generation_schema_error_count"] = len(generation_schema_errors)
             attempt["generation_rule_error_count"] = len(generation_rule_errors)
             if generation_schema_errors or generation_rule_errors:
@@ -863,13 +1072,21 @@ def create_umdl_router(settings_dict: dict[str, Any]) -> APIRouter:
             "plan": final_plan,
             "validation": {"schema_errors": [], "rule_errors": [], "attempts": attempts},
             "generation": {
-                "mode": "compact_ir_then_compile",
+                "mode": "compact_ir_v0.2_then_compile",
                 "ir": final_ir,
                 "few_shot_family": _infer_family(req.instruction) if few_shot else None,
                 "guided_json": settings.guided_json,
                 "guided_decoding_backend": settings.guided_decoding_backend if settings.guided_json else None,
-                "schema_scope": "family_constrained" if _infer_family(req.instruction) in FAMILY_POLICIES else "base",
-                "semantic_policy": _infer_family(req.instruction) if _infer_family(req.instruction) in FAMILY_POLICIES else None,
+                "schema_scope": (
+                    "family_constrained"
+                    if settings.family_hints_enabled and _infer_family(req.instruction) in FAMILY_POLICIES
+                    else "base"
+                ),
+                "semantic_policy": (
+                    _infer_family(req.instruction)
+                    if settings.family_hints_enabled and _infer_family(req.instruction) in FAMILY_POLICIES
+                    else None
+                ),
             },
             "timing_ms": {"llm_http_ms": round(total_http_ms, 3)},
             "execution": {

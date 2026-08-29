@@ -7,10 +7,21 @@
   "planner_generation": {
     "temperature": 0.0,
     "max_tokens": 512,
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "few_shot_enabled": false,
+    "family_hints_enabled": false,
+    "guided_json": false,
+    "safety_fast_path": true
   },
   "actuation_policy": {
     "publish_ros_twist_from_umdl_endpoint": false,
     "reason": "UMDL is a high-level platform-independent plan and requires a separate platform adapter/compiler."
+  },
+  "generation_schema_path": "/app/dataset/schema/umdl-generation-0.2.schema.json",
+  "benchmark_policy": {
+    "force_llm": true,
+    "family_hints_enabled": false,
+    "few_shot_enabled": false,
+    "reason": "Benchmark the selected LLM itself; deterministic safety routing is kept for runtime but bypassed during model comparison."
   }
 }

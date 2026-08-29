@@ -11,9 +11,17 @@ import copy
 import hashlib
 import json
 import random
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.umdl_codec import COMPACT_SYSTEM_PROMPT, compact_from_full
 
 SEED = 20260801
 SCHEMA_VERSION = "umdl/0.1"
@@ -608,6 +616,25 @@ def to_chat(sample: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def to_compact_chat(sample: dict[str, Any]) -> dict[str, Any]:
+    system = COMPACT_SYSTEM_PROMPT
+    user_payload = {
+        "instruction": sample["input"]["command"],
+        "runtime_context": sample["input"].get("runtime_context", {}),
+        "available_capabilities": sample["input"].get("available_capabilities", []),
+    }
+    return {
+        "id": sample["id"],
+        "group_id": sample["group_id"],
+        "split": sample["split"],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, sort_keys=True)},
+            {"role": "assistant", "content": json.dumps(compact_from_full(sample["target"]), ensure_ascii=False, sort_keys=True)},
+        ],
+    }
+
+
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -622,6 +649,7 @@ def main() -> None:
     root = args.root
     raw_dir = root / "raw"
     chat_dir = root / "chat"
+    compact_chat_dir = root / "chat_compact"
     manifest_dir = root / "manifests"
 
     random.seed(SEED)
@@ -666,6 +694,7 @@ def main() -> None:
     for split in ("train", "validation", "test"):
         write_jsonl(raw_dir / f"{split}.jsonl", by_split[split])
         write_jsonl(chat_dir / f"{split}.jsonl", [to_chat(s) for s in by_split[split]])
+        write_jsonl(compact_chat_dir / f"{split}.jsonl", [to_compact_chat(s) for s in by_split[split]])
 
     group_counts = Counter(split_map.values())
     row_counts = Counter(r["split"] for r in rows)

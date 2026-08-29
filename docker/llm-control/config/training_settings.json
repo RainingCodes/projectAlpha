@@ -3,9 +3,9 @@
   "base_model": "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
   "dataset_format": "chat_messages_jsonl",
   "files": {
-    "train": "/app/dataset/chat/train.jsonl",
-    "validation": "/app/dataset/chat/validation.jsonl",
-    "test": "/app/dataset/chat/test.jsonl"
+    "train": "/app/dataset/chat_compact/train.jsonl",
+    "validation": "/app/dataset/chat_compact/validation.jsonl",
+    "test": "/app/dataset/chat_compact/test.jsonl"
   },
   "sequence": {
     "max_seq_length": 2048,
@@ -55,8 +55,18 @@
       "safety_violation_rate",
       "clarification_accuracy"
     ],
-    "secondary": ["bleu", "meteor"],
+    "secondary": [
+      "bleu",
+      "meteor"
+    ],
     "note": "BLEU/METEOR are only auxiliary because executable mission semantics matter more than text similarity."
   },
-  "warning": "The included 720-sample seed is for pipeline verification. Expand to at least 5000 reviewed samples before interpreting model quality."
+  "warning": "The included 720-sample seed is for pipeline verification. Expand to at least 5000 reviewed samples before interpreting model quality.",
+  "task": "natural_language_and_runtime_context_to_compact_umdl_ir_v0.2",
+  "runtime_alignment": {
+    "assistant_target": "Compact UMDL IR v0.2",
+    "runtime_generation": "Compact UMDL IR v0.2",
+    "compiler": "deterministic Compact IR v0.2 -> Full UMDL 0.1",
+    "roundtrip_required": true
+  }
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UMDL compact generation IR 0.1",
+  "title": "UMDL compact generation IR 0.2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,6 +10,8 @@
     "required_capabilities",
     "preferred_sensor_roles",
     "tasks",
+    "constraints_policy",
+    "contingency_policy",
     "requires_clarification",
     "missing_fields",
     "safe_fallback",
@@ -36,15 +38,25 @@
     },
     "priority": {
       "type": "string",
-      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
     },
     "decision": {
       "type": "string",
-      "enum": ["EXECUTE", "REQUEST_CLARIFICATION", "REJECT", "UNSUPPORTED"]
+      "enum": [
+        "EXECUTE",
+        "REQUEST_CLARIFICATION",
+        "REJECT",
+        "UNSUPPORTED"
+      ]
     },
     "required_capabilities": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 12,
       "uniqueItems": true,
       "items": {
         "type": "string",
@@ -66,24 +78,18 @@
     },
     "preferred_sensor_roles": {
       "type": "array",
-      "maxItems": 4,
+      "maxItems": 8,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": [
-          "FORWARD_TARGET_DETECTION",
-          "ACOUSTIC_IMAGING",
-          "OPTICAL_IMAGING",
-          "DEPTH_MEASUREMENT",
-          "POSITION_ESTIMATION",
-          "ENVIRONMENT_SENSING",
-          "PIPELINE_DETECTION"
-        ]
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Z0-9_]+$"
       }
     },
     "tasks": {
       "type": "array",
-      "maxItems": 4,
+      "maxItems": 6,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -91,7 +97,9 @@
           "type",
           "target_type",
           "target_reference",
-          "pattern",
+          "pattern_type",
+          "pattern_parameters",
+          "parameters",
           "completion_condition",
           "report_type"
         ],
@@ -135,10 +143,10 @@
           },
           "target_reference": {
             "type": "string",
-            "maxLength": 64,
-            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+            "minLength": 1,
+            "maxLength": 96
           },
-          "pattern": {
+          "pattern_type": {
             "type": "string",
             "enum": [
               "NONE",
@@ -153,26 +161,96 @@
               "PRIORITY_REGION_SEARCH"
             ]
           },
+          "pattern_parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "spacing_m": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target_depth_m": {
+                "type": "number"
+              },
+              "duration_s": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "metric": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "bearing_deg": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 360
+              },
+              "distance_m": {
+                "type": "number",
+                "minimum": 0
+              },
+              "inspection_focus": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "direction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          },
           "completion_condition": {
             "type": "string",
-            "maxLength": 64,
-            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+            "minLength": 1,
+            "maxLength": 96
           },
           "report_type": {
             "type": "string",
-            "maxLength": 64,
-            "pattern": "^(NONE|[A-Z0-9_./:-]+)$"
+            "minLength": 1,
+            "maxLength": 96
           }
         }
       }
     },
-    "requires_clarification": {"type": "boolean"},
+    "constraints_policy": {
+      "type": "string",
+      "enum": [
+        "PLATFORM_DEFAULT",
+        "SAFE_RETURN_PROFILE"
+      ]
+    },
+    "contingency_policy": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "BATTERY_BELOW_RESERVE_RETURN_SURFACE",
+        "NAVIGATION_UNSTABLE_REPORT_SURFACE"
+      ]
+    },
+    "requires_clarification": {
+      "type": "boolean"
+    },
     "missing_fields": {
       "type": "array",
       "maxItems": 5,
       "uniqueItems": true,
       "items": {
         "type": "string",
+        "minLength": 1,
         "maxLength": 48,
         "pattern": "^[a-z0-9_]+$"
       }
@@ -191,14 +269,9 @@
     },
     "reason_code": {
       "type": "string",
-      "enum": [
-        "NONE",
-        "MISSING_INFORMATION",
-        "UNAVAILABLE_CAPABILITY",
-        "SAFETY_CONSTRAINT_VIOLATION",
-        "UNSUPPORTED_OPERATION",
-        "AMBIGUOUS_COMMAND"
-      ]
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[A-Z0-9_]+$"
     }
   }
 }

@@ -52,8 +52,10 @@
 - `raw/train.jsonl`
 - `raw/validation.jsonl`
 - `raw/test.jsonl`
-- `chat/*.jsonl`: SFT용 `messages` 형식
-- `schema/umdl-0.1.schema.json`: UMDL JSON Schema
+- `chat/*.jsonl`: 기존 Full UMDL assistant target 보관용
+- `chat_compact/*.jsonl`: **현재 SFT/runtime 정렬용 Compact IR v0.2 messages 형식**
+- `schema/umdl-0.1.schema.json`: Full UMDL JSON Schema
+- `schema/umdl-generation-0.2.schema.json`: LLM 생성용 Compact IR v0.2 JSON Schema
 - `manifests/split_manifest.json`: 생성 설정과 분포
 - `manifests/group_split.json`: group별 split
 
@@ -66,7 +68,7 @@
 - Stonefish 운항 결과, 경로 성공률, 충돌 여부, 에너지 소비는 포함하지 않는다.
 - heading sequence와 제어 데이터는 별도 rollout dataset으로 수집해야 한다.
 
-최종 학습 전에는 최소 5,000개 이상의 검수된 자연어–UMDL 쌍으로 확장하고, test target은 전수 검수하는 것을 권장한다.
+현재 720개 seed는 Full UMDL -> Compact IR v0.2 -> Full UMDL exact round-trip 720/720을 자동 검증한다. 최종 학습 전에는 최소 5,000개 이상의 검수된 자연어–UMDL 쌍으로 확장하고, test target은 전수 검수하는 것을 권장한다.
 
 ## 생성 이력
 

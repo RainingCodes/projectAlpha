@@ -236,14 +236,16 @@ LLM_HTTP_TIMEOUT = _pick_float("LLM_HTTP_TIMEOUT", 120.0, "LLM_HTTP_TIMEOUT", "h
 LLM_DUMMY = _bool_dummy()
 LLM_CONTROL_PORT = _int_setting("LLM_CONTROL_PORT", 8080)
 UMDL_MAX_TOKENS = _int_setting("UMDL_MAX_TOKENS", 512)
-UMDL_GUIDED_JSON = _bool_setting("UMDL_GUIDED_JSON", True)
+UMDL_GUIDED_JSON = _bool_setting("UMDL_GUIDED_JSON", False)
 UMDL_GUIDED_BACKEND = _str_setting("UMDL_GUIDED_BACKEND", "outlines")
-UMDL_FEW_SHOT = _bool_setting("UMDL_FEW_SHOT", True)
+UMDL_FEW_SHOT = _bool_setting("UMDL_FEW_SHOT", False)
+UMDL_FAMILY_HINTS = _bool_setting("UMDL_FAMILY_HINTS", False)
 UMDL_MAX_RETRIES = _int_setting("UMDL_MAX_RETRIES", 0)
 UMDL_SAFETY_FAST_PATH = _bool_setting("UMDL_SAFETY_FAST_PATH", True)
 UMDL_DATASET_ROOT = _str_setting("UMDL_DATASET_ROOT", "/app/dataset")
 UMDL_SCHEMA_PATH = _str_setting("UMDL_SCHEMA_PATH", "/app/dataset/schema/umdl-0.1.schema.json")
-UMDL_GENERATION_SCHEMA_PATH = _str_setting("UMDL_GENERATION_SCHEMA_PATH", "/app/dataset/schema/umdl-generation-0.1.schema.json")
+UMDL_GENERATION_SCHEMA_PATH = _str_setting("UMDL_GENERATION_SCHEMA_PATH", "/app/dataset/schema/umdl-generation-0.2.schema.json")
+LEGACY_DIRECT_CONTROL_ENABLED = _bool_setting("LEGACY_DIRECT_CONTROL_ENABLED", False)
 
 LOG.info(
     "LLM backend provider=%s | ollama=%s@%s | huggingface model=%s @ %s "
@@ -751,6 +753,7 @@ app.include_router(
             "guided_json": UMDL_GUIDED_JSON,
             "guided_decoding_backend": UMDL_GUIDED_BACKEND,
             "few_shot_enabled": UMDL_FEW_SHOT,
+            "family_hints_enabled": UMDL_FAMILY_HINTS,
             "max_retries": UMDL_MAX_RETRIES,
             "safety_fast_path": UMDL_SAFETY_FAST_PATH,
         }
@@ -783,11 +786,22 @@ async def health() -> dict[str, Any]:
         "umdl_dataset_root": UMDL_DATASET_ROOT,
         "umdl_schema_path": UMDL_SCHEMA_PATH,
         "umdl_max_tokens": UMDL_MAX_TOKENS,
+        "umdl_few_shot": UMDL_FEW_SHOT,
+        "umdl_family_hints": UMDL_FAMILY_HINTS,
+        "legacy_direct_control_enabled": LEGACY_DIRECT_CONTROL_ENABLED,
     }
 
 
 @app.post("/control/high_level")
 async def high_level(cmd: HighLevelCommand) -> dict[str, Any]:
+    if not LEGACY_DIRECT_CONTROL_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Legacy direct LLM-to-Twist control is disabled. "
+                "Use /mission/plan for UMDL experiments or set LEGACY_DIRECT_CONTROL_ENABLED=1 only for isolated low-level smoke tests."
+            ),
+        )
     if _bridge is None:
         raise HTTPException(status_code=503, detail="ROS 브리지가 아직 준비되지 않았습니다.")
     t_req = time.perf_counter()

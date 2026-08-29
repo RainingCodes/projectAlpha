@@ -14,6 +14,12 @@ try:
 except ImportError as exc:
     raise SystemExit("jsonschema is required: pip install jsonschema") from exc
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.umdl_codec import compact_from_full, compile_umdl
+
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -41,15 +47,18 @@ def main() -> int:
     p.add_argument("--root", type=Path, default=Path("/app/dataset"))
     args = p.parse_args()
 
-    schema_path = args.root / "schema" / "umdl-0.1.schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
+    full_schema = json.loads((args.root / "schema" / "umdl-0.1.schema.json").read_text(encoding="utf-8"))
+    compact_schema = json.loads((args.root / "schema" / "umdl-generation-0.2.schema.json").read_text(encoding="utf-8"))
+    full_validator = Draft202012Validator(full_schema)
+    compact_validator = Draft202012Validator(compact_schema)
 
     split_rows: dict[str, list[dict[str, Any]]] = {}
     errors: list[str] = []
     all_ids: set[str] = set()
     group_splits: dict[str, set[str]] = defaultdict(set)
     group_hashes: dict[str, set[str]] = defaultdict(set)
+    roundtrip_ok = 0
+    compact_schema_ok = 0
 
     for split in ("train", "validation", "test"):
         path = args.root / "raw" / f"{split}.jsonl"
@@ -71,13 +80,35 @@ def main() -> int:
                 errors.append(f"{rid}: invalid group_id")
                 continue
             group_splits[gid].add(split)
-            group_hashes[gid].add(target_hash(row.get("target")))
+            target = row.get("target")
+            group_hashes[gid].add(target_hash(target))
             command = row.get("input", {}).get("command")
             if not isinstance(command, str) or not command.strip():
                 errors.append(f"{rid}: empty command")
-            for err in sorted(validator.iter_errors(row.get("target")), key=lambda e: list(e.path)):
+
+            full_errors = list(full_validator.iter_errors(target))
+            for err in sorted(full_errors, key=lambda e: list(e.path)):
                 location = ".".join(map(str, err.path)) or "<root>"
-                errors.append(f"{rid}: schema {location}: {err.message}")
+                errors.append(f"{rid}: full schema {location}: {err.message}")
+
+            try:
+                compact = compact_from_full(target)
+            except Exception as exc:
+                errors.append(f"{rid}: compact conversion failed: {exc}")
+                continue
+            compact_errors = list(compact_validator.iter_errors(compact))
+            if compact_errors:
+                for err in sorted(compact_errors, key=lambda e: list(e.path)):
+                    location = ".".join(map(str, err.path)) or "<root>"
+                    errors.append(f"{rid}: compact schema {location}: {err.message}")
+            else:
+                compact_schema_ok += 1
+
+            compiled = compile_umdl(compact, str(target.get("mission_id", gid)))
+            if compiled != target:
+                errors.append(f"{rid}: full -> compact -> full roundtrip mismatch")
+            else:
+                roundtrip_ok += 1
 
     for gid, splits in sorted(group_splits.items()):
         if len(splits) != 1:
@@ -86,11 +117,39 @@ def main() -> int:
         if len(hashes) != 1:
             errors.append(f"target mismatch within group: {gid}")
 
-    all_path = args.root / "raw" / "all.jsonl"
-    all_rows = read_jsonl(all_path)
+    all_rows = read_jsonl(args.root / "raw" / "all.jsonl")
     split_total = sum(len(v) for v in split_rows.values())
     if len(all_rows) != split_total:
         errors.append(f"all.jsonl rows={len(all_rows)} but split total={split_total}")
+
+    compact_chat_counts: dict[str, int] = {}
+    for split, rows in split_rows.items():
+        chat_path = args.root / "chat_compact" / f"{split}.jsonl"
+        if not chat_path.exists():
+            errors.append(f"missing compact chat file: {chat_path}")
+            continue
+        chat_rows = read_jsonl(chat_path)
+        compact_chat_counts[split] = len(chat_rows)
+        if len(chat_rows) != len(rows):
+            errors.append(f"compact chat {split}: rows={len(chat_rows)} raw={len(rows)}")
+        raw_by_id = {r["id"]: r for r in rows}
+        for chat in chat_rows:
+            rid = chat.get("id")
+            if rid not in raw_by_id:
+                errors.append(f"compact chat {split}: unknown id={rid}")
+                continue
+            messages = chat.get("messages")
+            if not isinstance(messages, list) or len(messages) != 3:
+                errors.append(f"{rid}: compact chat requires exactly 3 messages")
+                continue
+            try:
+                assistant_target = json.loads(messages[2]["content"])
+            except Exception as exc:
+                errors.append(f"{rid}: invalid compact assistant JSON: {exc}")
+                continue
+            expected = compact_from_full(raw_by_id[rid]["target"])
+            if assistant_target != expected:
+                errors.append(f"{rid}: compact chat target mismatch")
 
     result = {
         "valid": not errors,
@@ -98,6 +157,9 @@ def main() -> int:
         "sample_total": split_total,
         "group_count": len(group_splits),
         "id_count": len(all_ids),
+        "compact_schema_valid_count": compact_schema_ok,
+        "compact_roundtrip_exact_count": roundtrip_ok,
+        "compact_chat_counts": compact_chat_counts,
         "error_count": len(errors),
         "errors": errors[:100],
     }
